@@ -58,6 +58,9 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(passport.initialize());
 
+// Handle favicon requests quickly and avoid DB connect overhead.
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // ── Lazy DB connection ───────────────────────────────────────────────────────
 // Connects to MongoDB on the FIRST real request, not at module load.
 // This avoids adding DB connection time to the cold-start, preventing timeouts.
@@ -65,8 +68,7 @@ app.use(async (req, res, next) => {
   try {
     await connectDB();
   } catch (err) {
-    console.error('DB connect error in middleware:', err.message);
-    // Allow the request to continue — individual routes handle missing DB
+    console.error('DB connect error in middleware:', err.message || err);
   }
   next();
 });
@@ -78,6 +80,11 @@ app.use(limiter);
 // Health check
 app.get("/api/health", (req, res) =>
   res.json({ status: "ok", timestamp: new Date() }),
+);
+
+// Root status route
+app.get('/', (req, res) =>
+  res.json({ success: true, message: 'SmartPrepAI backend is running' }),
 );
 
 // ── Routes ────────────────────────────────────────────────────────────────────
