@@ -37,6 +37,7 @@
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
+    ,"serverless-http": "^3.0.0"
   },
   "devDependencies": {
     "eslint": "^10.4.1",
