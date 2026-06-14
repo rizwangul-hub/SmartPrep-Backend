@@ -34,10 +34,10 @@
     "openai": "^6.42.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "pdfjs-dist": "^4.0.0",
+    "pdfjs-dist": "^3.11.174",
+    "serverless-http": "^3.0.0",
     "tesseract.js": "^7.0.0",
-    "xlsx": "^0.18.5",
-    "serverless-http": "^3.0.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "eslint": "^10.4.1",
