@@ -1,5 +1,5 @@
 // backend/src/controllers/aiUploadController.js
-const { PDFParse } = require("pdf-parse");
+const { pdfParse } = require("../utils/pdfParseWrapper");
 const mammoth = require("mammoth");
 const Tesseract = require("tesseract.js");
 const Question = require("../models/Question");
@@ -585,10 +585,8 @@ exports.extractQuestions = async (req, res) => {
     // Step 2: Extract text based on file type (NO AI)
     if (extension === "pdf" || mimetype === "application/pdf") {
       try {
-        const parser = new PDFParse({ data: req.file.buffer });
-        const parsed = await parser.getText();
+        const parsed = await pdfParse(req.file.buffer);
         extractedText = parsed.text || "";
-        await parser.destroy();
       } catch (err) {
         console.warn("pdf-parse failed, checking OCR fallback:", err.message);
       }

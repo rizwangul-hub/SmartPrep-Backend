@@ -169,15 +169,7 @@ exports.updateUserStatus = async (req, res) => {
 
 // --- ADVANCED MCQ IMPORTER SYSTEM (Step 1 to 13) ---
 
-const { PDFParse } = require('pdf-parse');
-const pdfParse = async (buffer) => {
-  const parser = new PDFParse({ data: buffer });
-  const result = await parser.getText();
-  return {
-    text: result.text,
-    numpages: result.total,
-  };
-};
+const { pdfParse } = require('../utils/pdfParseWrapper');
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const Question = require('../models/Question');

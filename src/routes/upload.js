@@ -3,15 +3,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
-const { PDFParse } = require('pdf-parse');
-const pdfParse = async (buffer) => {
-  const parser = new PDFParse({ data: buffer });
-  const result = await parser.getText();
-  return {
-    text: result.text,
-    numpages: result.total,
-  };
-};
+const { pdfParse } = require('../utils/pdfParseWrapper');
 const cloudinary = require('../config/cloudinary');
 const verifyToken = require('../middleware/auth');
 const Question = require('../models/Question');
