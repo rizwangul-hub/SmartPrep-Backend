@@ -9,7 +9,11 @@ require("dotenv").config();
 const connectDB = require("./config/db");
 const passport = require("./config/passport");
 
-connectDB();
+// Connect at startup when running locally (non-serverless).
+// On Vercel, VERCEL env var is set, so we skip this and use lazy middleware instead.
+if (!process.env.VERCEL) {
+  connectDB();
+}
 
 const app = express();
 
@@ -53,6 +57,19 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(passport.initialize());
+
+// ── Lazy DB connection ───────────────────────────────────────────────────────
+// Connects to MongoDB on the FIRST real request, not at module load.
+// This avoids adding DB connection time to the cold-start, preventing timeouts.
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('DB connect error in middleware:', err.message);
+    // Allow the request to continue — individual routes handle missing DB
+  }
+  next();
+});
 
 // Rate limiting
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
