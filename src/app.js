@@ -75,6 +75,7 @@ const notificationRoutes = require("./routes/notifications");
 const testRoutes = require("./routes/test");
 const uploadRoutes = require("./routes/upload");
 const projectRoutes = require("./routes/projects");
+const longTaskRoutes = require("./routes/longtask");
 // Dev-only admin route (enabled by setting DEV_ALLOW_ADMIN_UPDATE=true in .env)
 let devAdminRoutes;
 if (process.env.DEV_ALLOW_ADMIN_UPDATE === "true") {
@@ -98,6 +99,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/tests", testRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/longtask", longTaskRoutes);
 
 // 404 catch-all
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
