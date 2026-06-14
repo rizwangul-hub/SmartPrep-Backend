@@ -2,12 +2,14 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// Create a transporter using Gmail SMTP (app password recommended)
+// Create a transporter using environment-configured SMTP or fallback to Gmail app password
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: Number(process.env.EMAIL_PORT) || 587,
+  secure: process.env.EMAIL_SECURE === 'true' || false,
   auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
+    user: process.env.EMAIL_USER || process.env.GMAIL_USER,
+    pass: process.env.EMAIL_PASS || process.env.GMAIL_PASS,
   },
 });
 
@@ -18,15 +20,19 @@ const transporter = nodemailer.createTransport({
  * @param {string} html - HTML body content
  */
 const sendMail = async (to, subject, html) => {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-    console.log('⚠️ [Email Service] Gmail credentials not set. Mocking email send:');
+  const user = process.env.EMAIL_USER || process.env.GMAIL_USER;
+  const pass = process.env.EMAIL_PASS || process.env.GMAIL_PASS;
+
+  if (!user || !pass) {
+    console.log('⚠️ [Email Service] SMTP credentials not set. Mocking email send:');
     console.log(`👉 To: ${to}`);
     console.log(`👉 Subject: ${subject}`);
     console.log(`👉 Body: ${html}`);
     return { mock: true, messageId: 'mock-id' };
   }
+
   const mailOptions = {
-    from: process.env.GMAIL_USER,
+    from: user,
     to,
     subject,
     html,

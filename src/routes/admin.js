@@ -2,6 +2,8 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const aiUploadController = require('../controllers/aiUploadController');
+const reclassifyController = require('../controllers/reclassifyController');
 const verifyToken = require('../middleware/auth');
 
 // Middleware to ensure user is admin
@@ -23,6 +25,18 @@ router.put('/settings', adminController.updateSettings);
 
 // Stats
 router.get('/stats', adminController.getDashboardStats);
+
+// Bulk MCQ Import System (Admin only)
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+
+router.post('/mcq-import/upload', upload.single('file'), aiUploadController.extractQuestions);
+router.post('/mcq-import/save', aiUploadController.saveQuestions);
+
+// MCQ Subject Reclassification (preview → confirm → apply)
+router.post('/reclassify/preview', reclassifyController.previewReclassification);
+router.post('/reclassify/apply', reclassifyController.applyReclassification);
+router.get('/reclassify/report', reclassifyController.getReclassificationReport);
 
 // User CRUD
 router.get('/users', adminController.getUsers);

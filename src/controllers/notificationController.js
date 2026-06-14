@@ -91,7 +91,7 @@ exports.getUnreadCount = async (req, res) => {
       user: req.user.id,
       read: false,
     });
-    res.json({ unreadCount: count });
+    res.json({ unreadCount: count, count });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error fetching unread count' });

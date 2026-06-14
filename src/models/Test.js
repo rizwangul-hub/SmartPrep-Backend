@@ -12,6 +12,8 @@ const testSchema = new mongoose.Schema({
     explanation: { type: String },
     subject: { type: String }
   }],
+  // Parallel array of original Question ObjectIds — used to update user.seenQuestions on submit
+  questionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
   duration: { type: Number, required: true }, // in minutes
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Creator or generator
   createdAt: { type: Date, default: Date.now },

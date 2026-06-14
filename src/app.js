@@ -47,10 +47,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
 app.use(helmet());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(passport.initialize());
@@ -72,6 +71,7 @@ const adminRoutes = require("./routes/admin");
 const studyRoutes = require("./routes/study");
 const gamificationRoutes = require("./routes/gamification");
 const questionRoutes = require("./routes/questions");
+const notificationRoutes = require("./routes/notifications");
 const testRoutes = require("./routes/test");
 const uploadRoutes = require("./routes/upload");
 const projectRoutes = require("./routes/projects");
@@ -94,6 +94,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/study", studyRoutes);
 app.use("/api/gamification", gamificationRoutes);
 app.use("/api/questions", questionRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use("/api/tests", testRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/projects", projectRoutes);

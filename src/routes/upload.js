@@ -3,11 +3,27 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
+const pdfParse = async (buffer) => {
+  const parser = new PDFParse({ data: buffer });
+  const result = await parser.getText();
+  return {
+    text: result.text,
+    numpages: result.total,
+  };
+};
 const cloudinary = require('../config/cloudinary');
 const verifyToken = require('../middleware/auth');
 const Question = require('../models/Question');
 const Exam = require('../models/Exam');
+const aiUploadController = require('../controllers/aiUploadController');
+
+const verifyAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ message: 'Access denied: Admin only' });
+};
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -157,6 +173,129 @@ router.post('/questions/:examId', verifyToken, upload.single('file'), async (req
   } catch (err) {
     console.error('Bulk import error:', err);
     res.status(500).json({ message: 'Error processing bulk file upload' });
+  }
+});
+
+// AI-Powered Question Extraction & Saving
+router.post('/ai-extract', verifyToken, verifyAdmin, upload.single('file'), aiUploadController.extractQuestions);
+router.post('/ai-save', verifyToken, verifyAdmin, aiUploadController.saveQuestions);
+
+// AdminDashboard Bulk Upload Integrations (Non-AI)
+const Tesseract = require('tesseract.js');
+const mcqParser = require('../utils/mcqParser');
+
+function extractJpegsFromPdf(buffer) {
+  const jpegs = [];
+  let pos = 0;
+  while (true) {
+    const subtypeIdx = buffer.indexOf('/Subtype', pos);
+    if (subtypeIdx === -1) break;
+    pos = subtypeIdx + 8;
+    const nextSlice = buffer.slice(subtypeIdx, subtypeIdx + 50).toString('ascii');
+    if (!nextSlice.match(/\/Subtype\s*\/Image/)) continue;
+    const streamIdx = buffer.indexOf('stream', subtypeIdx);
+    if (streamIdx === -1) continue;
+    const endstreamIdx = buffer.indexOf('endstream', streamIdx);
+    if (endstreamIdx === -1) continue;
+    let streamStart = streamIdx + 6;
+    if (buffer[streamStart] === 13 && buffer[streamStart + 1] === 10) streamStart += 2;
+    else if (buffer[streamStart] === 10) streamStart += 1;
+    const dictStart = buffer.lastIndexOf('<<', subtypeIdx);
+    const dictEnd = buffer.indexOf('>>', subtypeIdx);
+    if (dictStart !== -1 && dictEnd !== -1 && dictStart < streamIdx) {
+      const dictText = buffer.slice(dictStart, dictEnd).toString('ascii');
+      if (dictText.includes('/DCTDecode') || dictText.includes('/DCT')) {
+        jpegs.push(buffer.slice(streamStart, endstreamIdx));
+      }
+    }
+    pos = endstreamIdx + 9;
+  }
+  return jpegs;
+}
+
+router.post('/pdf-import', verifyToken, verifyAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+    
+    let text = "";
+    try {
+      const parsed = await pdfParse(req.file.buffer);
+      text = parsed.text || "";
+    } catch (err) {
+      console.warn("pdf-parse failed, falling back to OCR:", err.message);
+    }
+    
+    // OCR Fallback for scanned PDFs
+    if (!text || text.trim().length < 100) {
+      const jpegs = extractJpegsFromPdf(req.file.buffer);
+      if (jpegs.length > 0) {
+        let ocrText = "";
+        const limit = 5;
+        for (let i = 0; i < jpegs.length; i += limit) {
+          const chunk = jpegs.slice(i, i + limit);
+          const results = await Promise.all(
+            chunk.map(imgBuf =>
+              Tesseract.recognize(imgBuf, "eng")
+                .then(r => r.data.text)
+                .catch(() => "")
+            )
+          );
+          ocrText += results.join("\n") + "\n";
+        }
+        text = ocrText;
+      }
+    }
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Unable to extract any text from the PDF file.' });
+    }
+
+    const questions = mcqParser.parseMCQs(text);
+    res.json({ questions });
+  } catch (err) {
+    console.error('pdf-import error:', err);
+    res.status(500).json({ message: 'Error parsing PDF file' });
+  }
+});
+
+router.post('/excel-import', verifyToken, verifyAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet);
+
+    const questions = [];
+    rows.forEach((row) => {
+      const text = row.Question || row.question || row.Text || row.text;
+      const options = [
+        row.OptionA || row.optionA || row.option1 || row.A || row.a,
+        row.OptionB || row.optionB || row.option2 || row.B || row.b,
+        row.OptionC || row.optionC || row.option3 || row.C || row.c,
+        row.OptionD || row.optionD || row.option4 || row.D || row.d
+      ].map(o => String(o || "").trim()).filter(Boolean);
+
+      const correctAns = String(row.CorrectIndex || row.correctIndex || row.CorrectOption || row.CorrectAnswer || row.correct || 0).trim();
+      let correctIndex = 0;
+      if (correctAns.toLowerCase() === 'b' || correctAns === '1') correctIndex = 1;
+      else if (correctAns.toLowerCase() === 'c' || correctAns === '2') correctIndex = 2;
+      else if (correctAns.toLowerCase() === 'd' || correctAns === '3') correctIndex = 3;
+
+      if (text && options.length === 4) {
+        questions.push({ text: String(text).trim(), options, correctOptionIndex: correctIndex });
+      }
+    });
+
+    res.json({ questions });
+  } catch (err) {
+    console.error('excel-import error:', err);
+    res.status(500).json({ message: 'Error parsing Excel file' });
   }
 });
 

@@ -156,6 +156,40 @@ exports.submitGeneratedTest = async (req, res) => {
       strongSubjects,
     });
 
+    // ── Record question IDs as "seen" for this user + exam type ──────────────
+    const questionIds = test.questionIds || [];
+    if (questionIds.length > 0 && req.user && req.user.id) {
+      const examType = test.examType || "General";
+      const User = require("../models/User");
+
+      // Check if the user already has a seenQuestions entry for this exam type
+      const user = await User.findById(req.user.id).select("seenQuestions");
+      if (user) {
+        const existing = user.seenQuestions.find(
+          (e) => e.examType.toLowerCase() === examType.toLowerCase()
+        );
+
+        if (existing) {
+          // Add only IDs that are not already tracked ($addToSet equivalent via JS filter)
+          const existingSet = new Set(existing.questionIds.map((id) => id.toString()));
+          const newIds = questionIds.filter((id) => !existingSet.has(id.toString()));
+          if (newIds.length > 0) {
+            await User.updateOne(
+              { _id: req.user.id, "seenQuestions.examType": examType },
+              { $push: { "seenQuestions.$.questionIds": { $each: newIds } } }
+            );
+          }
+        } else {
+          // Create a new entry for this exam type
+          await User.updateOne(
+            { _id: req.user.id },
+            { $push: { seenQuestions: { examType, questionIds } } }
+          );
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     res.status(201).json({
       resultId: result._id,
       score,
@@ -172,6 +206,7 @@ exports.submitGeneratedTest = async (req, res) => {
     res.status(500).json({ message: "Server error submitting test answers" });
   }
 };
+
 
 exports.getUserResults = async (req, res) => {
   try {

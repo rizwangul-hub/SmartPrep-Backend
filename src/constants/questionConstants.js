@@ -18,87 +18,245 @@ const SUPPORTED_SUBJECTS = [
 const SUPPORTED_DIFFICULTIES = ["easy", "medium", "hard"];
 
 const EXAM_OPTIONS = [
+  "ASF",
+  "FIA",
+  "ANF",
+  "Police",
   "PMA",
   "Army",
   "Navy",
   "Air Force",
-  "ASF",
-  "FIA",
-  "Police",
   "UDC",
   "LDC",
   "MDCAT",
-  "ECAT",
+  "ECAT"
 ];
 
-// Balanced subject distribution per exam (subject -> count)
-const EXAM_DISTRIBUTIONS = {
-  pma: {
-    English: 20,
-    "General Knowledge": 20,
-    "Pakistan Studies": 20,
-    "Islamic Studies": 20,
-    Intelligence: 20,
-  },
-  army: {
-    English: 20,
-    "General Knowledge": 20,
-    "Pakistan Studies": 20,
-    "Islamic Studies": 20,
-    Intelligence: 20,
-  },
-  navy: {
-    English: 20,
-    "General Knowledge": 20,
-    "Pakistan Studies": 20,
-    "Islamic Studies": 20,
-    Intelligence: 20,
-  },
-  "air force": {
-    "Verbal Intelligence": 50,
-    "Non Verbal Intelligence": 50,
-  },
+// Syllabus maps and rules for all 12 exams
+const EXAM_SYLLABUS = {
   asf: {
-    English: 25,
-    Mathematics: 25,
-    "General Knowledge": 25,
-    Intelligence: 25,
+    title: "ASF Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "English": 20,
+      "General Knowledge & Current Affairs": 20,
+      "Pakistan Studies": 20,
+      "Islamic Studies & Urdu": 20,
+      "Mathematics / Intelligence": 20
+    }
   },
   fia: {
-    English: 25,
-    Mathematics: 25,
-    "General Knowledge": 25,
-    Intelligence: 25,
+    title: "FIA Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "English": 20,
+      "General Knowledge": 20,
+      "Computer": 20,
+      "IQ / Intelligence": 20,
+      "Pakistan Studies": 10,
+      "Islamic Studies": 10
+    }
+  },
+  anf: {
+    title: "ANF Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "English": 20,
+      "General Knowledge & Everyday Science": 20,
+      "Pakistan Studies": 20,
+      "Islamic Studies": 20,
+      "ANF Related Questions": 20
+    }
   },
   police: {
-    English: 25,
-    Mathematics: 25,
-    "General Knowledge": 25,
-    Intelligence: 25,
+    title: "Police Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "General Knowledge": 11,
+      "Pakistan Studies": 11,
+      "Current Affairs": 11,
+      "English": 11,
+      "Urdu": 11,
+      "Mathematics": 11,
+      "Intelligence": 11,
+      "Computer": 11,
+      "Law Basics": 12
+    }
   },
   udc: {
-    English: 25,
-    "General Knowledge": 25,
-    Mathematics: 25,
-    "Pakistan Studies": 25,
+    title: "UDC Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "Computer": 50,
+      "English": 10,
+      "General Knowledge": 10,
+      "Pakistan Studies": 10,
+      "Islamic Studies": 10,
+      "IQ / Intelligence": 10
+    }
   },
   ldc: {
-    English: 25,
-    "General Knowledge": 25,
-    Mathematics: 25,
-    "Pakistan Studies": 25,
+    title: "LDC Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "Computer": 50,
+      "English": 10,
+      "General Knowledge": 10,
+      "Pakistan Studies": 10,
+      "Islamic Studies": 10,
+      "IQ / Intelligence": 10
+    }
   },
   mdcat: {
-    Biology: 30,
-    Chemistry: 25,
-    Physics: 25,
-    English: 20,
+    title: "MDCAT Syllabus Test",
+    duration: 180,
+    totalQuestions: 180,
+    distribution: {
+      "Biology": 81,
+      "Chemistry": 45,
+      "Physics": 36,
+      "English": 9,
+      "IQ / Intelligence": 9
+    }
   },
   ecat: {
-    Mathematics: 35,
-    Physics: 35,
-    Chemistry: 30,
+    title: "ECAT Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "Mathematics": 30,
+      "Physics": 30,
+      "Chemistry / Computer": 30,
+      "English": 10
+    }
   },
+  army: {
+    title: "Army Syllabus Test",
+    duration: 100,
+    totalQuestions: 100,
+    distribution: {
+      "English": 20,
+      "General Knowledge": 20,
+      "Pakistan Studies": 20,
+      "Islamic Studies": 20,
+      "Mathematics / Intelligence": 20
+    }
+  },
+  pma: {
+    stages: [
+      {
+        step: 1,
+        title: "PMA - Step 1: Verbal Intelligence Test",
+        duration: 30,
+        totalQuestions: 50,
+        distribution: { "Verbal Intelligence": 50 }
+      },
+      {
+        step: 2,
+        title: "PMA - Step 2: Non-Verbal Intelligence Test",
+        duration: 30,
+        totalQuestions: 50,
+        distribution: { "Non Verbal Intelligence": 50 }
+      },
+      {
+        step: 3,
+        title: "PMA - Step 3: Academic Test",
+        duration: 100,
+        totalQuestions: 100,
+        distribution: {
+          "English": 20,
+          "General Knowledge": 20,
+          "Pakistan Studies": 20,
+          "Islamic Studies": 20,
+          "Mathematics": 20
+        }
+      }
+    ]
+  },
+  navy: {
+    stages: [
+      {
+        step: 1,
+        title: "Navy - Step 1: Intelligence Test",
+        duration: 30,
+        totalQuestions: 50,
+        distribution: {
+          "Verbal Intelligence": 25,
+          "Non Verbal Intelligence": 25
+        }
+      },
+      {
+        step: 2,
+        title: "Navy - Step 2: Academic Test",
+        duration: 100,
+        totalQuestions: 100,
+        distribution: {
+          "English": 20,
+          "Mathematics": 20,
+          "Physics": 20,
+          "General Knowledge": 20,
+          "Pakistan Studies": 20
+        }
+      }
+    ]
+  },
+  "air force": {
+    stages: [
+      {
+        step: 1,
+        title: "Air Force - Step 1: Intelligence Test",
+        duration: 30,
+        totalQuestions: 50,
+        distribution: {
+          "Verbal Intelligence": 25,
+          "Non Verbal Intelligence": 25
+        }
+      },
+      {
+        step: 2,
+        title: "Air Force - Step 2: English Test",
+        duration: 50,
+        totalQuestions: 50,
+        distribution: { "English": 50 }
+      },
+      {
+        step: 3,
+        title: "Air Force - Step 3: Physics Test",
+        duration: 50,
+        totalQuestions: 50,
+        distribution: { "Physics": 50 }
+      },
+      {
+        step: 4,
+        title: "Air Force - Step 4: Mathematics Test",
+        duration: 50,
+        totalQuestions: 50,
+        distribution: { "Mathematics": 50 }
+      }
+    ]
+  }
+};
+
+// Map EXAM_DISTRIBUTIONS for backward compatibility
+const EXAM_DISTRIBUTIONS = {
+  pma: EXAM_SYLLABUS.pma.stages[2].distribution,
+  army: EXAM_SYLLABUS.army.distribution,
+  navy: EXAM_SYLLABUS.navy.stages[1].distribution,
+  "air force": EXAM_SYLLABUS["air force"].stages[1].distribution,
+  asf: EXAM_SYLLABUS.asf.distribution,
+  fia: EXAM_SYLLABUS.fia.distribution,
+  anf: EXAM_SYLLABUS.anf.distribution,
+  police: EXAM_SYLLABUS.police.distribution,
+  udc: EXAM_SYLLABUS.udc.distribution,
+  ldc: EXAM_SYLLABUS.ldc.distribution,
+  mdcat: EXAM_SYLLABUS.mdcat.distribution,
+  ecat: EXAM_SYLLABUS.ecat.distribution,
 };
 
 const normalizeExamKey = (examName) => {
@@ -112,6 +270,7 @@ const normalizeExamKey = (examName) => {
   if (normalized.includes("ecat")) return "ecat";
   if (normalized.includes("asf")) return "asf";
   if (normalized.includes("fia")) return "fia";
+  if (normalized.includes("anf")) return "anf";
   if (normalized.includes("police")) return "police";
   if (normalized.includes("udc")) return "udc";
   if (normalized.includes("ldc")) return "ldc";
@@ -137,6 +296,7 @@ module.exports = {
   SUPPORTED_SUBJECTS,
   SUPPORTED_DIFFICULTIES,
   EXAM_OPTIONS,
+  EXAM_SYLLABUS,
   EXAM_DISTRIBUTIONS,
   normalizeExamKey,
   normalizeDifficulty,

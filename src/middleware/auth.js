@@ -5,7 +5,8 @@ require('dotenv').config();
 
 // Looks for token in HttpOnly cookie "token" or Authorization header "Bearer <token>"
 const verifyToken = async (req, res, next) => {
-  const token = req.cookies?.token || (req.headers.authorization || '').split(' ')[1];
+  const bearerToken = (req.headers.authorization || '').split(' ')[1];
+  const token = bearerToken || req.cookies?.token;
   if (!token) {
     return res.status(401).json({ message: 'No token, authorization denied' });
   }

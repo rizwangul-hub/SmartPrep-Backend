@@ -2,75 +2,176 @@ const Test = require("../models/Test");
 const Exam = require("../models/Exam");
 const Question = require("../models/Question");
 const Result = require("../models/Result");
+const User = require("../models/User");
 const redis = require("../config/redis");
 const {
-  EXAM_DISTRIBUTIONS,
+  EXAM_SYLLABUS,
   normalizeExamKey,
 } = require("../constants/questionConstants");
 
-const sampleBankQuestions = async (match, count, excludeIds = new Set()) => {
-  const matchWithExclude = {
-    ...match,
-    isActive: true,
-    ...(excludeIds.size
-      ? { _id: { $nin: Array.from(excludeIds) } }
-      : {}),
-  };
-  const available = await Question.countDocuments(matchWithExclude);
-  if (!available) return [];
-  const size = Math.min(count, available);
-  return Question.aggregate([{ $match: matchWithExclude }, { $sample: { size } }]);
+const mapSyllabusKeyToDbSubjects = (key) => {
+  const k = key.trim().toLowerCase();
+  if (k === "english") return ["English", "English "];
+  if (k.includes("general knowledge") && k.includes("current affairs")) return ["General Knowledge", "GK", "Current Affairs"];
+  if (k.includes("general knowledge") && k.includes("everyday science")) return ["General Knowledge", "GK", "Everyday Science", "Science"];
+  if (k === "general knowledge" || k === "gk") return ["General Knowledge", "GK"];
+  if (k === "current affairs") return ["Current Affairs"];
+  if (k === "pakistan studies") return ["Pakistan Studies"];
+  if (k === "islamic studies & urdu") return ["Islamic Studies", "Urdu"];
+  if (k === "islamic studies" || k === "islamiat") return ["Islamic Studies"];
+  if (k === "urdu") return ["Urdu"];
+  if (k.includes("mathematics") && k.includes("intelligence")) return ["Mathematics", "Intelligence", "Verbal Intelligence", "Non Verbal Intelligence"];
+  if (k === "mathematics" || k === "math") return ["Mathematics"];
+  if (k === "physics") return ["Physics"];
+  if (k === "chemistry") return ["Chemistry"];
+  if (k === "biology") return ["Biology"];
+  if (k === "computer") return ["Computer"];
+  if (k === "iq / intelligence" || k === "intelligence" || k === "analytical reasoning" || k === "logical reasoning") {
+    return ["Intelligence", "Verbal Intelligence", "Non Verbal Intelligence"];
+  }
+  if (k === "verbal intelligence") return ["Verbal Intelligence"];
+  if (k === "non verbal intelligence") return ["Non Verbal Intelligence"];
+  if (k === "anf related questions") return ["ANF Related Questions", "ANF", "General Knowledge"];
+  if (k === "chemistry / computer") return ["Chemistry", "Computer"];
+  if (k === "law basics") return ["Law Basics", "General Knowledge"];
+  return [key];
 };
 
-const buildBalancedTest = async (examName, totalQuestions, difficulty) => {
-  const examKey = normalizeExamKey(examName);
-  const distribution = EXAM_DISTRIBUTIONS[examKey];
+const getCurrentStageForExam = async (userId, examKey) => {
+  const results = await Result.find({ user: userId })
+    .populate("exam")
+    .populate("test")
+    .lean();
 
-  if (!distribution) {
-    return sampleBankQuestions(
-      { difficulty, examName: { $regex: examName, $options: "i" } },
-      totalQuestions,
+  const examResults = results.filter((r) => {
+    const nameMatch = (r.examName || "").trim().toLowerCase();
+    const testTitle = r.test ? (r.test.title || "").trim().toLowerCase() : "";
+    const examTitle = r.exam ? (r.exam.title || "").trim().toLowerCase() : "";
+    
+    return (
+      nameMatch.includes(examKey) ||
+      testTitle.includes(examKey) ||
+      examTitle.includes(examKey) ||
+      (examKey === "air force" && (nameMatch.includes("paf") || testTitle.includes("paf") || examTitle.includes("paf")))
     );
-  }
+  });
 
-  const distributionTotal = Object.values(distribution).reduce((a, b) => a + b, 0);
-  const scale = totalQuestions / distributionTotal;
-  const selected = [];
-  const selectedIds = new Set();
-
-  for (const [subject, count] of Object.entries(distribution)) {
-    const bucketCount = Math.max(1, Math.round(count * scale));
-    const bucketQuestions = await sampleBankQuestions(
-      {
-        subject,
-        difficulty,
-        $or: [
-          { examName: { $regex: examName, $options: "i" } },
-          { examName: { $exists: false } },
-          { examName: null },
-          { examName: "" },
-        ],
-      },
-      bucketCount,
-      selectedIds,
-    );
-
-    bucketQuestions.forEach((q) => {
-      selectedIds.add(q._id.toString());
-      selected.push(q);
+  const checkPassed = (keywords) => {
+    return examResults.some((r) => {
+      if (r.score < 50) return false;
+      const testTitle = r.test ? (r.test.title || "").toLowerCase() : "";
+      const examTitle = r.exam ? (r.exam.title || "").toLowerCase() : "";
+      return keywords.some((kw) => testTitle.includes(kw) || examTitle.includes(kw));
     });
+  };
+
+  if (examKey === "pma") {
+    const passedStep1 = checkPassed(["verbal intelligence", "step 1"]);
+    const passedStep2 = checkPassed(["non-verbal intelligence", "non verbal intelligence", "step 2"]);
+    const passedStep3 = checkPassed(["academic", "step 3"]);
+    
+    let step = 1;
+    if (passedStep1) step = 2;
+    if (passedStep1 && passedStep2) step = 3;
+    
+    return {
+      step,
+      passed: [passedStep1, passedStep2, passedStep3],
+      stagesList: [
+        { number: 1, name: "Step 1: Verbal Intelligence Test", passed: passedStep1 },
+        { number: 2, name: "Step 2: Non-Verbal Intelligence Test", passed: passedStep2 },
+        { number: 3, name: "Step 3: Academic Written Exam", passed: passedStep3 }
+      ]
+    };
   }
 
-  if (selected.length < totalQuestions) {
-    const extra = await sampleBankQuestions(
-      { difficulty },
-      totalQuestions - selected.length,
-      selectedIds,
-    );
-    selected.push(...extra);
+  if (examKey === "navy") {
+    const passedStep1 = checkPassed(["intelligence", "step 1"]);
+    const passedStep2 = checkPassed(["academic", "step 2"]);
+    
+    let step = 1;
+    if (passedStep1) step = 2;
+    
+    return {
+      step,
+      passed: [passedStep1, passedStep2],
+      stagesList: [
+        { number: 1, name: "Step 1: Intelligence Test (Verbal/Non-Verbal)", passed: passedStep1 },
+        { number: 2, name: "Step 2: Academic Written Exam", passed: passedStep2 }
+      ]
+    };
   }
 
-  return selected.slice(0, totalQuestions);
+  if (examKey === "air force") {
+    const passedStep1 = checkPassed(["intelligence", "step 1"]);
+    const passedStep2 = checkPassed(["english", "step 2"]);
+    const passedStep3 = checkPassed(["physics", "step 3"]);
+    const passedStep4 = checkPassed(["mathematics", "math", "step 4"]);
+    
+    let step = 1;
+    if (passedStep1) step = 2;
+    if (passedStep1 && passedStep2) step = 3;
+    if (passedStep1 && passedStep2 && passedStep3) step = 4;
+    
+    return {
+      step,
+      passed: [passedStep1, passedStep2, passedStep3, passedStep4],
+      stagesList: [
+        { number: 1, name: "Step 1: Intelligence Test", passed: passedStep1 },
+        { number: 2, name: "Step 2: English Test", passed: passedStep2 },
+        { number: 3, name: "Step 3: Physics Test", passed: passedStep3 },
+        { number: 4, name: "Step 4: Mathematics Test", passed: passedStep4 }
+      ]
+    };
+  }
+
+  return null;
+};
+
+const sampleSyllabusQuestions = async (examKey, subjectKey, count, selectedIds) => {
+  const dbSubjects = mapSyllabusKeyToDbSubjects(subjectKey);
+  
+  // 1. Try to find questions specific to this exam first
+  const matchWithExam = {
+    subject: { $in: dbSubjects },
+    examName: { $regex: examKey, $options: "i" },
+    isActive: true,
+    ...(selectedIds.size ? { _id: { $nin: Array.from(selectedIds) } } : {})
+  };
+  
+  let available = await Question.countDocuments(matchWithExam);
+  let size = Math.min(count, available);
+  let questions = [];
+  
+  if (size > 0) {
+    questions = await Question.aggregate([
+      { $match: matchWithExam },
+      { $sample: { size } }
+    ]);
+  }
+  
+  // 2. If not enough exam-specific questions, query generic ones of this subject
+  if (questions.length < count) {
+    const remainingCount = count - questions.length;
+    const matchGeneric = {
+      subject: { $in: dbSubjects },
+      isActive: true,
+      _id: { $nin: [...Array.from(selectedIds), ...questions.map(q => q._id.toString())] }
+    };
+    
+    available = await Question.countDocuments(matchGeneric);
+    size = Math.min(remainingCount, available);
+    
+    if (size > 0) {
+      const genericQs = await Question.aggregate([
+        { $match: matchGeneric },
+        { $sample: { size } }
+      ]);
+      questions.push(...genericQs);
+    }
+  }
+  
+  return questions;
 };
 
 const stripCorrectAnswers = (questions) =>
@@ -82,89 +183,143 @@ const stripCorrectAnswers = (questions) =>
     difficulty: q.difficulty || "medium",
   }));
 
-// Generate bank-based mock test from question bank
+// ── Helper: get seen question IDs for a user+exam from User.seenQuestions ──
+const getSeenIdsForExam = async (userId, examType) => {
+  const user = await User.findById(userId).select("seenQuestions").lean();
+  if (!user) return new Set();
+  const entry = (user.seenQuestions || []).find(
+    (e) => e.examType.toLowerCase() === examType.toLowerCase()
+  );
+  return new Set((entry?.questionIds || []).map((id) => id.toString()));
+};
+
+// ── Helper: clear seen questions for a user+exam (used on bank exhaustion) ──
+const clearSeenIdsForExam = async (userId, examType) => {
+  await User.updateOne(
+    { _id: userId },
+    { $pull: { seenQuestions: { examType: { $regex: `^${examType}$`, $options: "i" } } } }
+  );
+};
+
+// Generate bank-based mock test from question bank according to syllabus
 exports.generateTest = async (req, res) => {
-  const {
-    exam = "PMA",
-    totalQuestions,
-    count,
-    difficulty = "medium",
-  } = req.body;
-  const num = Math.max(1, Number(totalQuestions || count) || 100);
-  const normalizedDifficulty = ["easy", "medium", "hard"].includes(
-    (difficulty || "").toLowerCase(),
-  )
-    ? difficulty.toLowerCase()
-    : "medium";
+  const { exam = "PMA" } = req.body;
+  const examKey = normalizeExamKey(exam);
+  const syllabus = EXAM_SYLLABUS[examKey];
+
+  if (!syllabus) {
+    return res.status(400).json({
+      message: `Unsupported exam type: ${exam}`,
+    });
+  }
 
   try {
-    const examRecord = await Exam.findOne({
-      title: { $regex: exam, $options: "i" },
-    }).lean();
+    let testTitle = "";
+    let duration = 100;
+    let totalQuestions = 100;
+    let distribution = {};
 
-    let questions = [];
-    let duration = Math.ceil(num * 0.75);
-    let testTitle = `${exam} Practice Test`;
+    // Check if stage-based flow (PMA, Navy, Air Force)
+    if (syllabus.stages) {
+      const stageInfo = await getCurrentStageForExam(req.user.id, examKey);
+      const stageObj = syllabus.stages[stageInfo.step - 1] || syllabus.stages[syllabus.stages.length - 1];
+      testTitle = stageObj.title;
+      duration = stageObj.duration;
+      totalQuestions = stageObj.totalQuestions;
+      distribution = stageObj.distribution;
+    } else {
+      testTitle = syllabus.title;
+      duration = syllabus.duration;
+      totalQuestions = syllabus.totalQuestions;
+      distribution = syllabus.distribution;
+    }
 
-    if (
-      examRecord &&
-      Array.isArray(examRecord.questionDistribution) &&
-      examRecord.questionDistribution.length
-    ) {
-      const selected = [];
-      const selectedIds = new Set();
+    // ── Load this user's previously-seen question IDs for this exam ──────────
+    const userId = req.user ? req.user.id : null;
+    let seenIds = userId ? await getSeenIdsForExam(userId, exam) : new Set();
 
-      for (const bucket of examRecord.questionDistribution) {
-        const bucketCount = Math.max(1, Number(bucket.count) || 1);
-        const bucketDifficulty = bucket.difficulty || normalizedDifficulty;
-        const bucketSubjects = bucket.subject ? [bucket.subject] : [exam];
+    const _buildTest = async (excludeIds) => {
+      const selectedQuestions = [];
+      const selectedIds = new Set(excludeIds); // start exclusion from seen + within-run
 
-        const bucketQuestions = await sampleBankQuestions(
-          {
-            subject: { $in: bucketSubjects },
-            difficulty: bucketDifficulty,
-          },
-          bucketCount,
-          selectedIds,
+      // Sample questions based on syllabus distribution
+      for (const [subjectKey, count] of Object.entries(distribution)) {
+        const targetCount = Math.round(
+          (count / Object.values(distribution).reduce((a, b) => a + b, 0)) * totalQuestions
         );
-
+        const bucketQuestions = await sampleSyllabusQuestions(
+          examKey,
+          subjectKey,
+          targetCount,
+          selectedIds
+        );
         bucketQuestions.forEach((q) => {
           selectedIds.add(q._id.toString());
-          selected.push(q);
+          selectedQuestions.push(q);
         });
       }
-      questions = selected.slice(0, num);
-      testTitle = examRecord.title;
-      duration = examRecord.duration || duration;
+
+      // Top up if short
+      if (selectedQuestions.length < totalQuestions) {
+        const topUpCount = totalQuestions - selectedQuestions.length;
+        const matchTopUp = {
+          isActive: true,
+          _id: { $nin: Array.from(selectedIds) },
+        };
+        const available = await Question.countDocuments(matchTopUp);
+        const size = Math.min(topUpCount, available);
+        if (size > 0) {
+          const topUpQuestions = await Question.aggregate([
+            { $match: matchTopUp },
+            { $sample: { size } },
+          ]);
+          topUpQuestions.forEach((q) => {
+            selectedIds.add(q._id.toString());
+            selectedQuestions.push(q);
+          });
+        }
+      }
+
+      return selectedQuestions;
+    };
+
+    let selectedQuestions = await _buildTest(seenIds);
+
+    // ── Edge case: bank exhausted for this user — reset and retry once ────────
+    if (selectedQuestions.length === 0 && seenIds.size > 0) {
+      console.log(`[generateTest] Question bank exhausted for user ${userId} on exam "${exam}". Resetting seen history.`);
+      if (userId) await clearSeenIdsForExam(userId, exam);
+      seenIds = new Set();
+      selectedQuestions = await _buildTest(seenIds);
     }
 
-    if (!questions.length) {
-      questions = await buildBalancedTest(exam, num, normalizedDifficulty);
-    }
-
-    if (!questions.length) {
+    if (!selectedQuestions.length) {
       return res.status(404).json({
-        message:
-          "No active questions are available in the bank for this exam type yet. Please ask an admin to seed questions.",
+        message: "No active questions are available in the bank for this exam type yet. Please seed questions.",
       });
     }
 
-    const formattedQuestions = questions.map((q) => ({
+    const finalQuestions = selectedQuestions.slice(0, totalQuestions);
+
+    const formattedQuestions = finalQuestions.map((q) => ({
+      _id: q._id,
       text: q.text,
       options: q.options,
       correctOptionIndex: q.correctOptionIndex,
       explanation: q.explanation || "",
       subject: q.subject || "General",
-      difficulty: q.difficulty || normalizedDifficulty,
+      difficulty: q.difficulty || "medium",
     }));
 
     const testDoc = await Test.create({
       title: testTitle,
       examType: exam,
-      difficulty: normalizedDifficulty,
+      difficulty: "medium",
       questions: formattedQuestions,
+      // Store the original Question ObjectIds so submitGeneratedTest can record them
+      questionIds: finalQuestions.map((q) => q._id),
       duration,
-      user: req.user ? req.user.id : null,
+      user: userId,
     });
 
     res.json({
@@ -181,9 +336,9 @@ exports.generateTest = async (req, res) => {
       }, {}),
     });
   } catch (err) {
-    console.error("Error generating bank-based test:", err);
+    console.error("Error generating syllabus test:", err);
     res.status(500).json({
-      message: "Server error generating mock test from the question bank",
+      message: "Server error generating syllabus-based mock test",
     });
   }
 };
@@ -256,113 +411,29 @@ exports.getProgress = async (req, res) => {
   }
 };
 
+// Returns progress details and next steps for the user
 exports.getExamStages = async (req, res) => {
   const { examName } = req.query;
   const userId = req.user.id;
+  const examKey = normalizeExamKey(examName);
 
   try {
-    const results = await Result.find({ user: userId }).populate("exam");
+    const stageInfo = await getCurrentStageForExam(userId, examKey);
 
-    if (examName === "Pakistan Air Force") {
-      const pafResults = results.filter(
-        (r) => r.exam && r.exam.title.toLowerCase().includes("air force"),
-      );
-
-      const hasPassedStage1 = pafResults.some(
-        (r) =>
-          r.exam.title.toLowerCase().includes("intelligence") && r.score >= 50,
-      );
-      const hasPassedStage2 = pafResults.some(
-        (r) => r.exam.title.toLowerCase().includes("english") && r.score >= 50,
-      );
-      const hasPassedStage3 = pafResults.some(
-        (r) => r.exam.title.toLowerCase().includes("physics") && r.score >= 50,
-      );
-      const hasPassedStage4 = pafResults.some(
-        (r) => r.exam.title.toLowerCase().includes("math") && r.score >= 50,
-      );
-      const hasPassedStage5 = pafResults.some((r) =>
-        r.exam.title.toLowerCase().includes("personality"),
-      );
-
-      let currentStage = 1;
-      let stageName = "Stage 1: Verbal Intelligence Test";
-
-      if (hasPassedStage4) {
-        currentStage = 5;
-        stageName = "Stage 5: Personality Test";
-      } else if (hasPassedStage3) {
-        currentStage = 4;
-        stageName = "Stage 4: Mathematics Test";
-      } else if (hasPassedStage2) {
-        currentStage = 3;
-        stageName = "Stage 3: Physics Test";
-      } else if (hasPassedStage1) {
-        currentStage = 2;
-        stageName = "Stage 2: English Test";
-      }
-
+    if (stageInfo) {
+      const currentStageObj = stageInfo.stagesList.find(s => s.number === stageInfo.step);
+      
       return res.json({
         examName,
-        currentStage,
-        stageName,
-        stages: [
-          {
-            number: 1,
-            name: "Verbal Intelligence Test",
-            passed: hasPassedStage1,
-          },
-          { number: 2, name: "English Test", passed: hasPassedStage2 },
-          { number: 3, name: "Physics Test", passed: hasPassedStage3 },
-          { number: 4, name: "Mathematics Test", passed: hasPassedStage4 },
-          { number: 5, name: "Personality Test", passed: hasPassedStage5 },
-        ],
+        currentStage: stageInfo.step,
+        stageName: currentStageObj ? currentStageObj.name : "Qualified / Completed",
+        stages: stageInfo.stagesList
       });
     }
 
-    if (
-      examName === "PMA Long Course" ||
-      examName === "Pakistan Army" ||
-      examName === "Pakistan Navy"
-    ) {
-      const milResults = results.filter(
-        (r) =>
-          r.exam &&
-          (r.exam.title.toLowerCase().includes("pma") ||
-            r.exam.title.toLowerCase().includes("navy") ||
-            r.exam.title.toLowerCase().includes("army")),
-      );
-
-      const hasPassedStage1 = milResults.some(
-        (r) =>
-          r.exam.title.toLowerCase().includes("intelligence") && r.score >= 50,
-      );
-      const hasPassedStage2 = milResults.some(
-        (r) => r.exam.title.toLowerCase().includes("academic") && r.score >= 50,
-      );
-
-      let currentStage = 1;
-      let stageName = "Stage 1: Intelligence Test";
-
-      if (hasPassedStage1) {
-        currentStage = 2;
-        stageName = "Stage 2: Academic Test";
-      }
-
-      return res.json({
-        examName,
-        currentStage,
-        stageName,
-        stages: [
-          {
-            number: 1,
-            name: "Intelligence Test (Verbal/Non-Verbal)",
-            passed: hasPassedStage1,
-          },
-          { number: 2, name: "Academic Written Exam", passed: hasPassedStage2 },
-        ],
-      });
-    }
+    // Fallback for standard non-staged exams
+    const results = await Result.find({ user: userId });
+    const passed = results.some((r) => r.score >= 50 && (r.examName || "").toLowerCase().includes(examKey));
 
     res.json({
       examName,
@@ -372,7 +443,7 @@ exports.getExamStages = async (req, res) => {
         {
           number: 1,
           name: "Comprehensive Entrance Mock Exam",
-          passed: results.some((r) => r.score >= 50),
+          passed: passed,
         },
       ],
     });
@@ -387,21 +458,58 @@ exports.getExamStages = async (req, res) => {
 exports.generateTestByExamId = async (req, res) => {
   try {
     const examId = req.params.examId;
-    const count = Number(req.query.count) || 100;
-    const difficulty = req.query.difficulty || "medium";
-
     let examRecord = null;
-    if (examId) examRecord = await Exam.findById(examId).lean();
+    if (examId) {
+      try {
+        examRecord = await Exam.findById(examId).lean();
+      } catch {
+        // Not a valid ObjectId
+      }
+    }
     const examTitle = examRecord ? examRecord.title : examId;
 
     req.body = {
       exam: examTitle || "PMA",
-      totalQuestions: count,
-      difficulty,
     };
     return exports.generateTest(req, res);
   } catch (err) {
     console.error("generateTestByExamId error:", err);
     res.status(500).json({ message: "Server error generating test" });
+  }
+};
+
+// ── Reset a user's seen-question history for a given exam type ────────────────
+// DELETE /api/tests/seen-questions?exam=ASF
+exports.resetSeenQuestions = async (req, res) => {
+  const { exam } = req.query;
+  if (!exam) {
+    return res.status(400).json({ message: "Query param `exam` is required" });
+  }
+  try {
+    await User.updateOne(
+      { _id: req.user.id },
+      { $pull: { seenQuestions: { examType: { $regex: `^${exam}$`, $options: "i" } } } }
+    );
+    res.json({ message: `Seen question history cleared for exam: ${exam}` });
+  } catch (err) {
+    console.error("resetSeenQuestions error:", err);
+    res.status(500).json({ message: "Server error resetting seen questions" });
+  }
+};
+
+// ── Get stats: how many questions a user has seen per exam ────────────────────
+// GET /api/tests/seen-questions/stats
+exports.getSeenQuestionsStats = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("seenQuestions").lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const stats = (user.seenQuestions || []).map((e) => ({
+      examType: e.examType,
+      seenCount: e.questionIds.length,
+    }));
+    res.json({ stats });
+  } catch (err) {
+    console.error("getSeenQuestionsStats error:", err);
+    res.status(500).json({ message: "Server error fetching seen question stats" });
   }
 };

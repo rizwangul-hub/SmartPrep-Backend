@@ -1,6 +1,7 @@
 // backend/src/controllers/authController.js
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { sendMail } = require('../utils/email');
 const cloudinary = require('../config/cloudinary');
@@ -26,6 +27,24 @@ const generateToken = (user) => {
   return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
     expiresIn: '1h',
   });
+};
+
+// OTP / reset password helpers
+const OTP_REQUEST_LIMIT = 3;
+const OTP_REQUEST_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const OTP_EXPIRE_MS = 10 * 60 * 1000; // 10 minutes
+
+const generateNumericOtp = () => {
+  return crypto.randomInt(100000, 999999).toString();
+};
+
+const hashOtp = async (otp) => {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(otp, salt);
+};
+
+const compareOtp = (otp, hash) => {
+  return bcrypt.compare(otp, hash);
 };
 
 // @desc   Register new user
@@ -128,27 +147,139 @@ exports.login = async (req, res) => {
   }
 };
 
-// @desc   Forgot password – send reset link
-// @route  POST /api/auth/forgot
+// @desc   Forgot password – send OTP to email
+// @route  POST /api/auth/forgot-password
 // @access Public
 exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email is required' });
+  }
+
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(200).json({ message: 'If that email exists, a reset link will be sent' });
-    // Create reset token valid for 1 hour
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expires = Date.now() + 60 * 60 * 1000;
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = expires;
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Account not found' });
+    }
+
+    const now = Date.now();
+    const windowStart = user.forgotPasswordOtpRequestWindowStart
+      ? new Date(user.forgotPasswordOtpRequestWindowStart).getTime()
+      : 0;
+
+    if (windowStart && now - windowStart < OTP_REQUEST_WINDOW_MS) {
+      if ((user.forgotPasswordOtpRequestCount || 0) >= OTP_REQUEST_LIMIT) {
+        return res.status(429).json({
+          success: false,
+          message: 'Too many OTP requests. Try again later.',
+        });
+      }
+      user.forgotPasswordOtpRequestCount = (user.forgotPasswordOtpRequestCount || 0) + 1;
+    } else {
+      user.forgotPasswordOtpRequestCount = 1;
+      user.forgotPasswordOtpRequestWindowStart = new Date(now);
+    }
+
+    const otp = generateNumericOtp();
+    user.forgotPasswordOtp = await hashOtp(otp);
+    user.forgotPasswordOtpExpire = new Date(now + OTP_EXPIRE_MS);
     await user.save();
-    const resetUrl = `${req.protocol}://${req.get('host')}/api/auth/reset/${resetToken}`;
-    const html = `<p>Hello,</p><p>Reset your password by clicking <a href="${resetUrl}">here</a>. This link expires in 1 hour.</p>`;
-    await sendMail(email, 'SmartPrep AI – Password Reset', html);
-    res.json({ message: 'If that email exists, a reset link will be sent' });
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;background:#f9fafb;border-radius:12px;">
+        <h2 style="color:#4f46e5;">SMARTPREPAI Password Reset OTP</h2>
+        <p>Hello <strong>${user.name}</strong>,</p>
+        <p>Your password reset OTP is:</p>
+        <p style="font-size:28px;font-weight:bold;margin:16px 0;letter-spacing:3px;color:#111;">${otp}</p>
+        <p>This OTP expires in <strong>10 minutes</strong>.</p>
+        <p>If you did not request a password reset, ignore this email.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
+        <p style="color:#9ca3af;font-size:12px;">SMARTPREPAI — AI-Powered Exam Preparation</p>
+      </div>
+    `;
+
+    await sendMail(email, 'SMARTPREPAI Password Reset OTP', html);
+    return res.json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Forgot password error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// @desc   Verify reset OTP
+// @route  POST /api/auth/verify-otp
+// @access Public
+exports.verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    return res.status(400).json({ success: false, message: 'Email and OTP are required' });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user || !user.forgotPasswordOtp || !user.forgotPasswordOtpExpire) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    if (new Date(user.forgotPasswordOtpExpire).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'OTP Expired' });
+    }
+
+    const isMatch = await compareOtp(otp.toString(), user.forgotPasswordOtp);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Verify OTP error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// @desc   Reset password using OTP
+// @route  POST /api/auth/reset-password
+// @access Public
+exports.resetPasswordWithOtp = async (req, res) => {
+  const { email, otp, password, confirmPassword } = req.body;
+  if (!email || !otp || !password || !confirmPassword) {
+    return res.status(400).json({ success: false, message: 'All fields are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, message: 'Passwords do not match' });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user || !user.forgotPasswordOtp || !user.forgotPasswordOtpExpire) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    if (new Date(user.forgotPasswordOtpExpire).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'OTP Expired' });
+    }
+
+    const isMatch = await compareOtp(otp.toString(), user.forgotPasswordOtp);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    user.password = password;
+    user.forgotPasswordOtp = undefined;
+    user.forgotPasswordOtpExpire = undefined;
+    user.forgotPasswordOtpRequestCount = 0;
+    user.forgotPasswordOtpRequestWindowStart = undefined;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Reset password with OTP error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 

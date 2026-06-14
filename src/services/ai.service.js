@@ -1,5 +1,5 @@
 // backend/src/services/ai.service.js
-const OpenAI = require("openai");
+const axios = require("axios");
 const AdminSettings = require("../models/AdminSettings");
 
 // Helper to clean and parse JSON from text responses
@@ -32,49 +32,128 @@ const parseJSONFromText = (text) => {
   }
 };
 
-// Retrieve client and model settings from DB or fallback to process.env
-const getOpenRouterClientAndModel = async () => {
-  const settings = await AdminSettings.findOne();
-  const apiKey = settings?.openrouterKey || process.env.OPENROUTER_API_KEY;
-  const defaultModel = settings?.defaultModel || "google/gemini-2.5-flash";
+// Helper to call Google Gemini directly using Axios
+// Supports both old (AIzaSy...) API keys and new (AQ...) Bearer token keys
+const callDirectGemini = async ({ messages, apiKey, temperature }) => {
+  let systemInstruction = "";
+  const contents = [];
 
-  if (!apiKey) {
-    throw new Error("OpenRouter API key is not configured");
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemInstruction = msg.content;
+    } else {
+      const role = msg.role === 'assistant' ? 'model' : 'user';
+      contents.push({
+        role: role,
+        parts: [{ text: msg.content }]
+      });
+    }
   }
 
-  const client = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: apiKey,
-  });
+  // Use gemini-2.0-flash (fast, free-tier supported)
+  const model = "gemini-2.0-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  return { client, defaultModel };
+  const headers = { 'Content-Type': 'application/json' };
+
+  const payload = {
+    contents: contents,
+    generationConfig: {
+      temperature: temperature,
+    }
+  };
+
+  if (systemInstruction) {
+    payload.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+
+  console.log(`💎 Calling Gemini API (model: ${model})`);
+
+  const response = await axios.post(url, payload, { headers });
+
+  const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error("Empty or invalid response from Gemini API");
+  }
+  return text.trim();
 };
 
-// Call OpenRouter with automatic model fallback
+// Generic callAI router (retaining the callOpenRouter name to prevent editing all calling functions)
 const callOpenRouter = async ({ messages, temperature = 0.7 }) => {
-  const { client, defaultModel } = await getOpenRouterClientAndModel();
+  const settings = await AdminSettings.findOne();
 
+  const geminiApiKey = (process.env.GEMINI_API_KEY || settings?.geminiKey || '').trim();
+  const openrouterApiKey = (process.env.OPENROUTER_API_KEY || settings?.openrouterKey || settings?.openaiKey || '').trim();
+
+  const provider = (process.env.AI_PROVIDER || settings?.aiProvider || 'openrouter').toLowerCase();
+  const normalizedProvider = provider === 'openrouter' ? 'openrouter' : provider === 'gemini' ? 'gemini' : 'openrouter';
+
+  if (normalizedProvider === 'gemini') {
+    const apiKey = geminiApiKey || openrouterApiKey;
+    if (!apiKey) {
+      throw new Error("No Gemini API key configured. Set GEMINI_API_KEY or geminiKey in admin settings.");
+    }
+
+    const isGeminiStyleKey = /^AQ\.|^AIzaSy/.test(apiKey);
+    if (!isGeminiStyleKey) {
+      console.warn("Provider is gemini, but the provided key does not look like Gemini style. Sending request anyway.");
+    }
+
+    try {
+      console.warn(`Using Gemini API because provider=${normalizedProvider}.`);
+      return await callDirectGemini({ messages, apiKey, temperature });
+    } catch (geminiErr) {
+      console.error(`Gemini request failed: ${geminiErr.message}`);
+      throw geminiErr;
+    }
+  }
+
+  if (!openrouterApiKey) {
+    throw new Error("No OpenRouter API key configured. Please add OPENROUTER_API_KEY or openrouterKey in admin settings.");
+  }
+
+  const looksLikeGeminiKey = /^AQ\.|^AIzaSy/.test(openrouterApiKey);
+  if (looksLikeGeminiKey) {
+    console.warn("OpenRouter provider is selected but the OpenRouter API key looks like a Gemini-style key. Please verify your key.");
+  }
+
+  // 2. OpenRouter Call (default)
+  // Best models to try in order
+  const defaultModel = settings?.defaultModel || "openrouter/free";
   const modelsToTry = [
     defaultModel,
-    "deepseek/deepseek-chat",
-    "meta-llama/llama-3.3-70b-instruct"
+    "openrouter/free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-2-9b-it:free",
   ];
 
-  // Remove duplicates
   const uniqueModels = [...new Set(modelsToTry)];
   let lastError = null;
 
   for (const model of uniqueModels) {
     try {
       console.log(`🤖 Attempting OpenRouter completion using model: ${model}`);
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        temperature,
-      });
 
-      const content = response.choices?.[0]?.message?.content;
+      const response = await axios.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          model,
+          messages,
+          temperature,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${openrouterApiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
       if (content) {
+        console.log(`✅ OpenRouter success with model: ${model}`);
         return content.trim();
       }
       throw new Error(`Empty response content from model ${model}`);
@@ -332,6 +411,218 @@ Return output strictly in JSON matching:
   }
 };
 
+/**
+ * Convert extracted raw text into structured MCQs using OpenRouter.
+ */
+const convertTextToMCQs = async (text) => {
+  try {
+    const prompt = `AI TASK:
+Convert the given educational text into structured MCQs.
+
+Rules:
+* Only generate valid MCQs based ONLY on the provided text.
+* Each MCQ must have exactly 4 options.
+* One correct answer only, indexed by correctOptionIndex (0-3).
+* No hallucinated content. Only generate questions from the uploaded content. Do not use external knowledge.
+* Must stay within the educational syllabus.
+* Detect subject automatically for each question from: English, Urdu, Mathematics, Physics, Chemistry, Biology, Computer, General Knowledge, Islamic Studies, Pakistan Studies, Current Affairs, Intelligence, Verbal Intelligence, Non Verbal Intelligence.
+* Detect exam category automatically for each question from: ASF, FIA, ANF, Police, PMA, Army, Navy, Air Force, MDCAT, ECAT, LDC, UDC. If unclear, set to "General".
+
+OUTPUT FORMAT MUST BE STRICT JSON ARRAY OF OBJECTS (No markdown, no explanation, just raw JSON array):
+[
+  {
+    "exam": "ASF",
+    "subject": "English",
+    "text": "...question...",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctOptionIndex": 0,
+    "type": "single"
+  }
+]
+
+Educational text to convert:
+\"\"\"
+${text}
+\"\"\"`;
+
+    const rawText = await callOpenRouter({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+    });
+
+    const parsed = parseJSONFromText(rawText);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed;
+    }
+    if (parsed && typeof parsed === "object") {
+      return [parsed];
+    }
+    throw new Error("Parsed content is not a valid JSON array");
+  } catch (err) {
+    console.error(`❌ convertTextToMCQs error: ${err.message}`);
+    throw err;
+  }
+};
+
+/**
+ * Classify multiple questions into subject and exam categories in a single request.
+ */
+const classifyQuestionsBatch = async (questions) => {
+  if (!questions || questions.length === 0) return [];
+  
+  try {
+    const prompt = `AI TASK:
+Classify each of the following multiple-choice questions into a subject and exam category.
+
+Allowed subjects: English, Urdu, Mathematics, Physics, Chemistry, Biology, Computer, General Knowledge, Islamic Studies, Pakistan Studies, Current Affairs, Intelligence, Verbal Intelligence, Non Verbal Intelligence.
+Allowed exams: ASF, FIA, ANF, Police, PMA, Army, Navy, Air Force, MDCAT, ECAT, LDC, UDC. If unclear, set to "General".
+
+Questions to classify:
+${JSON.stringify(questions.map((q, i) => ({ id: i, text: q.text })), null, 2)}
+
+OUTPUT FORMAT MUST BE STRICT JSON ARRAY OF OBJECTS (No markdown, no explanation, just raw JSON array):
+[
+  { "id": 0, "subject": "Physics", "exam": "ECAT" }
+]`;
+
+    const rawText = await callOpenRouter({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+    });
+
+    const parsed = parseJSONFromText(rawText);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed;
+    }
+    throw new Error("Parsed content is not a valid classification array");
+  } catch (err) {
+    console.error(`❌ classifyQuestionsBatch error: ${err.message}`);
+    // Return empty classifications for fallback
+    return [];
+  }
+};
+
+/**
+ * Classify multiple question texts into subject categories in a single request.
+ */
+const classifySubjectsBatch = async (questions) => {
+  if (!questions || questions.length === 0) return [];
+  
+  try {
+    const prompt = `AI TASK:
+Classify each of the following multiple-choice questions into a subject category and provide a confidence score (from 0 to 100).
+
+Allowed subjects:
+* English
+* Urdu
+* Mathematics
+* Physics
+* Chemistry
+* Biology
+* Computer
+* General Knowledge
+* Islamic Studies
+* Pakistan Studies
+* Current Affairs
+* Intelligence
+* Verbal Intelligence
+* Non Verbal Intelligence
+
+CLASSIFICATION RULES & GUIDELINES:
+1. Islamic Studies: Any question related to Prophets, companions of the Prophet (Sahaba), early Caliphs (Khulafa-e-Rashideen), battles of Islam (Ghazwat), Islamic history, Quran, Hadith, Islamic jurisprudence (Fiqh), pillars of Islam, or Islamic personalities. E.g., "Who was the first Caliph of Islam?" or "In which Ghazwa was the trench dug around Madinah?" must be classified as "Islamic Studies", NOT General Knowledge.
+2. Pakistan Studies: Any question related to Quaid-e-Azam, Allama Iqbal, the Pakistan Movement (pre-1947), Pakistan's constitution, political history of Pakistan, geography of Pakistan, national symbols, or historical events of Pakistan. E.g., "Who wrote Shikwa and Jawab-e-Shikwa?" must be classified as "Pakistan Studies", NOT General Knowledge.
+3. Current Affairs: Questions about current world leaders (e.g. current prime ministers, presidents, Secretary General of UN), current governments, current events, recent international developments, recent sports events, or recent international summits (G20, COP28, etc.). E.g., "Who is the current Secretary General of the United Nations?" must be classified as "Current Affairs", NOT General Knowledge.
+4. General Knowledge: Use this ONLY for questions about countries, capitals, currencies, continents, oceans, mountains, rivers, international organizations (UN, OIC, SAARC, WHO, IMF, World Bank, etc.) in a general/historical context, world geography, and basic world facts. E.g., "What is the capital of Canada?" or "Which organization is headquartered in New York?" belongs to "General Knowledge". General Knowledge must be used as a last resort category.
+5. English: Grammar, syntax, synonyms, antonyms, prepositions, tenses, active/passive voice, vocabulary, idioms, etc.
+6. Urdu: Urdu grammar, literature, poetry, authors, vocabulary, etc.
+7. Mathematics: Algebra, equations, arithmetic, geometry, trigonometry, ratio, averages, calculus, matrices, etc.
+8. Physics, Chemistry, Biology, Computer: Direct academic questions in these sciences.
+9. Intelligence, Verbal Intelligence, Non Verbal Intelligence: Analogies, coding/decoding, series, logical reasoning, water/mirror images, pattern completion.
+
+Questions to classify:
+${JSON.stringify(questions.map((q, i) => ({ id: i, text: q.text })), null, 2)}
+
+OUTPUT FORMAT MUST BE A STRICT JSON ARRAY OF OBJECTS (No markdown block, no explanation, just raw JSON array):
+[
+  { "id": 0, "subject": "Subject Name", "confidence": 95 }
+]`;
+
+    const rawText = await callOpenRouter({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+    });
+
+    const parsed = parseJSONFromText(rawText);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed;
+    }
+    throw new Error("Parsed content is not a valid subject classification array");
+  } catch (err) {
+    console.error(`❌ classifySubjectsBatch error: ${err.message}`);
+    return [];
+  }
+};
+
+/**
+ * Resolves uncertain questions by determining correctOptionIndex and/or subject.
+ */
+const resolveUncertainMCQsBatch = async (questions) => {
+  if (!questions || questions.length === 0) return [];
+  
+  try {
+    const prompt = `AI TASK:
+Analyze the following batch of multiple-choice questions. For each question:
+1. Classify the subject from the allowed list:
+   - English
+   - Urdu
+   - Mathematics
+   - Physics
+   - Chemistry
+   - Biology
+   - Computer
+   - General Knowledge
+   - Islamic Studies
+   - Pakistan Studies
+   - Current Affairs
+   - Intelligence
+   - Verbal Intelligence
+   - Non Verbal Intelligence
+2. Determine the correct answer from the provided options. Provide the 0-based index of the correct option (0=A, 1=B, 2=C, 3=D). If you cannot find the answer, set correctOptionIndex to -1.
+
+CLASSIFICATION RULES & GUIDELINES:
+- Islamic Studies: Prophets, companions (Sahaba), early Caliphs (Khulafa-e-Rashideen), battles of Islam (Ghazwat), Islamic history, Quran, Hadith, Islamic jurisprudence, pillars, Makkah/Madinah, and personalities. E.g., "first Caliph of Islam" is "Islamic Studies".
+- Pakistan Studies: Quaid-e-Azam, Allama Iqbal, pre-1947 Pakistan Movement, Pakistan's constitution, geography of Pakistan, national symbols, and history. E.g., "Who wrote Shikwa" is "Pakistan Studies".
+- Current Affairs: Current leaders, current governments, recent international developments, recent sports events, summits (G20, COP28, etc.). E.g., "current Secretary General of UN" is "Current Affairs".
+- General Knowledge: Countries, capitals, currencies, continents, oceans, mountains, rivers, international organizations (UN, SAARC, WHO, IMF, etc.) in general context, world geography, basic world facts. MUST be the last resort fallback.
+- English: Grammar, vocabulary, synonyms, antonyms, etc.
+- Urdu: Urdu grammar, literature, poetry, authors, etc.
+- Mathematics, Physics, Chemistry, Biology, Computer: Academic questions.
+- Intelligence, Verbal/Non Verbal Intelligence: Series, analogies, reasoning, water/mirror images.
+
+Questions to resolve:
+${JSON.stringify(questions.map((q, i) => ({ id: i, text: q.text, options: q.options })), null, 2)}
+
+OUTPUT FORMAT MUST BE A STRICT JSON ARRAY OF OBJECTS (No markdown block, no explanation, just raw JSON array):
+[
+  { "id": 0, "subject": "Subject Name", "correctOptionIndex": 1 }
+]`;
+
+    const rawText = await callOpenRouter({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+    });
+
+    const parsed = parseJSONFromText(rawText);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed;
+    }
+    throw new Error("Parsed content is not a valid JSON array");
+  } catch (err) {
+    console.error(`❌ resolveUncertainMCQsBatch error: ${err.message}`);
+    return [];
+  }
+};
+
 module.exports = {
   generateMCQs,
   generateIntelligenceTest,
@@ -341,4 +632,9 @@ module.exports = {
   chatAssistant,
   mockInterviewAssistant,
   recommendExams,
+  convertTextToMCQs,
+  classifyQuestionsBatch,
+  classifySubjectsBatch,
+  resolveUncertainMCQsBatch,
 };
+

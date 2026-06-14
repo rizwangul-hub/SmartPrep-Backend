@@ -2,6 +2,16 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// Tracks which Question IDs a user has already seen, per exam type.
+// Used to prevent the same question appearing in consecutive tests.
+const seenQuestionsEntrySchema = new mongoose.Schema(
+  {
+    examType: { type: String, required: true },
+    questionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
@@ -20,8 +30,14 @@ const userSchema = new mongoose.Schema({
   profileImage: { type: String, default: '' },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
+  forgotPasswordOtp: { type: String },
+  forgotPasswordOtpExpire: { type: Date },
+  forgotPasswordOtpRequestCount: { type: Number, default: 0 },
+  forgotPasswordOtpRequestWindowStart: { type: Date },
   status: { type: String, enum: ['active', 'blocked'], default: 'active' },
   bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
+  // Per-exam history of seen question IDs (for no-repeat question logic)
+  seenQuestions: { type: [seenQuestionsEntrySchema], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 

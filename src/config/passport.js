@@ -5,25 +5,38 @@ const User = require('../models/User');
 const crypto = require('crypto');
 require('dotenv').config();
 
+const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:5000').trim();
+
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: '/api/auth/google/callback',
+      // Must be ABSOLUTE URL — Google validates against the exact URI
+      // registered in Google Cloud Console under "Authorized redirect URIs"
+      callbackURL: `${BACKEND_URL}/api/auth/google/callback`,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        // Find or create user based on Google profile email
         const email = profile.emails[0].value;
         let user = await User.findOne({ email });
-        if (!user) {
+
+        if (user) {
+          // Link Google ID to existing local account if not already linked
+          if (!user.googleId) {
+            user.googleId = profile.id;
+            await user.save();
+          }
+        } else {
+          // Create a new user for first-time Google sign-in
           user = await User.create({
             name: profile.displayName,
             email,
             password: crypto.randomBytes(20).toString('hex'), // random placeholder
+            role: 'user',
             isVerified: true,
             googleId: profile.id,
+            profileImage: profile.photos?.[0]?.value || '',
           });
         }
         return done(null, user);
