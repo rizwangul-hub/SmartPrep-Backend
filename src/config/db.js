@@ -1,15 +1,23 @@
 // backend/src/config/db.js
 'use strict';
 const mongoose = require('mongoose');
+const dns = require('dns');
+
+// Force Google DNS to avoid ISP/router blocking SRV record lookups (querySrv ECONNREFUSED)
+dns.setDefaultResultOrder('ipv4first');
+const resolver = new dns.Resolver();
+resolver.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+// Override the global resolver used by Node.js networking
+dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
 
 const dbOptions = {
   autoIndex: false,
   bufferCommands: false,
-  serverSelectionTimeoutMS: 5000,
-  connectTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 10000,
+  connectTimeoutMS: 15000,
   socketTimeoutMS: 45000,
   maxPoolSize: 5,
-  family: 4,
+  // NOTE: 'family: 4' (IPv4 only) was removed — it can break Atlas SRV DNS lookups
 };
 
 if (!global.__mongoose) {
