@@ -35,7 +35,7 @@ const isValidSubject = (subject) => {
   );
 };
 
-// List bank questions with filters
+// List bank questions with filters — returns paginated result with totalCount
 exports.getQuestions = async (req, res) => {
   try {
     const {
@@ -46,9 +46,13 @@ exports.getQuestions = async (req, res) => {
       examName,
       keyword,
       active,
-      limit = 50,
-      skip = 0,
+      limit = 20,
+      page = 1,
     } = req.query;
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.min(Math.max(1, Number(limit)), 100); // max 100 per page
+    const skip = (pageNum - 1) * limitNum;
 
     const filter = {};
     if (subject) {
@@ -74,12 +78,22 @@ exports.getQuestions = async (req, res) => {
       filter.isActive = active === "true";
     }
 
-    const questions = await Question.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(Number(skip))
-      .limit(Math.min(Number(limit), 500));
+    const [questions, totalCount] = await Promise.all([
+      Question.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Question.countDocuments(filter),
+    ]);
 
-    res.json(questions);
+    res.json({
+      questions,
+      totalCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum),
+      limit: limitNum,
+    });
   } catch (err) {
     console.error("Error fetching question bank:", err);
     res.status(500).json({ message: "Server error fetching questions" });

@@ -111,13 +111,39 @@ exports.getDashboardStats = async (req, res) => {
 // List users for management
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find({}, '-password').sort({ createdAt: -1 });
-    res.json(users);
+    const { search = '', page = 1, limit = 25 } = req.query;
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.min(Math.max(1, Number(limit)), 100);
+    const skip = (pageNum - 1) * limitNum;
+
+    const filter = {};
+    if (search.trim()) {
+      const rx = { $regex: search.trim(), $options: 'i' };
+      filter.$or = [{ name: rx }, { email: rx }];
+    }
+
+    const [users, totalCount] = await Promise.all([
+      User.find(filter, '-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
+
+    res.json({
+      users,
+      totalCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum),
+      limit: limitNum,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error listing accounts' });
   }
 };
+
 
 // Toggle user role or status
 exports.updateUserRole = async (req, res) => {

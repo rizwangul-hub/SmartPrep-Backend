@@ -1,8 +1,3 @@
-// ============================================================================
-// CONSOLIDATED BACKEND SERVER - All-in-one file
-// ============================================================================
-// This file combines: app setup, routes, server creation, and startup
-// Instead of splitting code across multiple files, everything is here
 
 const path = require("path");
 const express = require("express");

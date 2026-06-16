@@ -651,6 +651,8 @@ exports.extractQuestions = async (req, res) => {
     console.log(`🧩 Parsed ${rawQuestions.length} raw questions.`);
 
     if (rawQuestions.length === 0) {
+      console.warn('MCQ extraction failed. extractedText.length=', extractedText.length, 'cleanedText.length=', cleanedText.length);
+      console.warn('Cleaned text preview:', cleanedText.slice(0, 1200).replace(/\n/g, ' | '));
       return res.status(422).json({
         message: "Could not find any structured MCQs in the file using standard patterns.",
       });

@@ -105,6 +105,7 @@ function parseBlock(block) {
 
   // Answer marker (updated to support optional checkmark and trailing text/answers)
   const ANSWER_PATTERN = /^(?:✓\s*)?(?:Answer|Correct\s*Choice\s*Answer|Correct\s*Choice|Correct\s*Answer|Correct\s*Option|Ans(?:wer)?|Key|Correct)\s*[:=\-–]?\s*(.+)$/i;
+  const INLINE_ANSWER_PATTERN = /(.*?)\s+(?:✓\s*)?(?:Answer|Correct\s*Choice\s*Answer|Correct\s*Choice|Correct\s*Answer|Correct\s*Option|Ans(?:wer)?|Key|Correct)\s*[:=\-–]?\s*(.+)$/i;
 
   const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
 
@@ -116,26 +117,34 @@ function parseBlock(block) {
   let hasFoundAnswer = false;
 
   for (const line of lines) {
-    if (hasFoundAnswer) continue;
+      if (hasFoundAnswer) continue;
 
-    // 1. Check for answer line first
-    const answerMatch = line.match(ANSWER_PATTERN);
-    if (answerMatch) {
-      extractedAnswerString = answerMatch[1].trim();
-      isFirstLine = false;
-      hasFoundAnswer = true;
-      continue; // skip this line from question/option collection
-    }
+      // Split inline answer marker if it occurs on the same line as an option or text.
+      let sourceLine = line;
+      const inlineAnswerMatch = line.match(INLINE_ANSWER_PATTERN);
+      if (inlineAnswerMatch) {
+        sourceLine = inlineAnswerMatch[1].trim();
+        extractedAnswerString = inlineAnswerMatch[2].trim();
+        hasFoundAnswer = true;
+      }
 
-    // 2. Check for option line
-    let optMatch = null;
-    if (!isFirstLine) {
-      optMatch =
-        line.match(OPTION_LINE) ||
-        line.match(PAREN_OPTION) ||
-        line.match(BRACKET_OPTION);
-    }
+      // 1. Check for answer line first
+      const answerMatch = sourceLine.match(ANSWER_PATTERN);
+      if (answerMatch) {
+        extractedAnswerString = answerMatch[1].trim();
+        isFirstLine = false;
+        hasFoundAnswer = true;
+        continue; // skip this line from question/option collection
+      }
 
+      // 2. Check for option line
+      let optMatch = null;
+      if (!isFirstLine) {
+        optMatch =
+          sourceLine.match(OPTION_LINE) ||
+          sourceLine.match(PAREN_OPTION) ||
+          sourceLine.match(BRACKET_OPTION);
+      }
     if (optMatch) {
       inOptions = true;
       const letter = optMatch[1].toUpperCase();
@@ -273,6 +282,12 @@ function cleanTextForParsing(rawText) {
   // Count line frequencies to strip repeating headers/footers
   // IMPORTANT: Never count answer lines — they appear hundreds of times legitimately
   const ANSWER_PATTERN = /^\s*(?:✓\s*)?(?:answer|correct\s*answer|ans(?:wer)?|key)\s*[:=\-–]?\s*(.+)$/i;
+  
+  // Calculate dynamic threshold based on document size
+  // Headers/footers repeat on almost every page. For a 100-page document, they repeat 100 times.
+  // We want to avoid deleting common question phrases or duplicated question parts.
+  const threshold = Math.max(10, Math.ceil(lines.length / 150));
+  
   const freq = {};
   for (const line of lines) {
     const t = line.trim().toLowerCase();
@@ -295,11 +310,15 @@ function cleanTextForParsing(rawText) {
     if (t === "") { cleaned.push(""); continue; }
 
     // Remove page numbers: "Page 1 of 125", "500 Premium Biology MCQ Test Bank Page 1 of 125"
-    if (t.match(/page\s*\d+\s*of\s*\d+/i)) continue;
-    if (t.match(/^\d+\s*of\s*\d+$/i)) continue;
-    if (t.match(/^-\s*\d+\s*-$/)) continue;
+    // Apply length check (< 100) to prevent false positives matching a full page of text
+    if (t.length < 100) {
+      if (t.match(/page\s*\d+\s*of\s*\d+/i)) continue;
+      if (t.match(/^\d+\s*of\s*\d+$/i)) continue;
+      if (t.match(/^-\s*\d+\s*-$/)) continue;
+    }
+    
     // Remove standalone "Page N" at end of long lines like "... Page 1 of 125"
-    if (t.match(/^.{10,}\s+page\s+\d+\s+of\s+\d+$/i)) {
+    if (t.match(/^.{10,}\s+page\s+\d+\s+of\s+\d+$/i) && t.length < 150) {
       const stripped = t.replace(/\s+page\s+\d+\s+of\s+\d+$/i, "").trim();
       if (stripped) cleaned.push(stripped);
       continue;
@@ -312,15 +331,26 @@ function cleanTextForParsing(rawText) {
       tl.includes("visit:") || tl.includes("downloaded from")
     ) continue;
 
-    // Remove lines that repeat more than 3 times (header/footer)
+    // Remove lines that repeat more than the calculated dynamic threshold
     // BUT never remove answer lines — they legitimately repeat hundreds of times
-    if (freq[tl] && freq[tl] > 3 && !ANSWER_PATTERN.test(tl)) continue;
+    if (freq[tl] && freq[tl] > threshold && !ANSWER_PATTERN.test(tl)) continue;
 
     cleaned.push(line);
   }
 
   // Collapse excessive blank lines
   let out = cleaned.join("\n");
+
+  // Normalize inline Option markers into their own lines.
+  // Example: "A) One B) Two C) Three D) Four" -> separate lines for each option.
+  out = out.replace(/([^\n])\s+([A-D1-4a-d])\s*[\.\)\]\-–]\s+/g, "$1\n$2) ");
+  out = out.replace(/\s+([A-D1-4a-d])\s*\.[^\S\n]*/g, "\n$1) ");
+  out = out.replace(/\s+Answer\s*[:=\-–]?\s*/gi, "\nAnswer: ");
+
+  // Split combined option lines like "A) text B) text" into multiple lines.
+  out = out.replace(/([A-D])\)\s*([^\n]+?)\s+(?=[A-D]\)\s+)/g, "$1) $2\n");
+
+  // Collapse excessive blank lines
   out = out.replace(/\n{3,}/g, "\n\n");
   return out;
 }
