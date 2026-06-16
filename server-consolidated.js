@@ -198,10 +198,11 @@ server.on('error', (err) => {
 });
 
 // Start the server
-start();
+if (!process.env.VERCEL) {
+  start();
+}
 
 // ============================================================================
-// EXPORT FOR VERCEL SERVERLESS (if needed)
+// EXPORT FOR VERCEL SERVERLESS
 // ============================================================================
-const serverless = require('serverless-http');
-module.exports = serverless(app);
+module.exports = app;
