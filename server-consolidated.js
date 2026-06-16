@@ -102,6 +102,17 @@ app.get("/api/health", (req, res) =>
   res.json({ status: "ok", timestamp: new Date() }),
 );
 
+app.get("/api/public-stats", async (req, res) => {
+  try {
+    const Question = require("./src/models/Question");
+    const questionCount = await Question.countDocuments({ isActive: true });
+    res.json({ questionCount });
+  } catch (err) {
+    console.error("Error fetching public stats:", err.message || err);
+    res.status(500).json({ success: false, message: "Error fetching stats" });
+  }
+});
+
 app.get('/', (req, res) =>
   res.json({ success: true, message: 'SmartPrepAI backend is running' }),
 );
