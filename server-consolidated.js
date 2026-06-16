@@ -119,7 +119,11 @@ app.get("/api/public-stats", async (req, res) => {
 });
 
 app.get('/', (req, res) =>
-  res.json({ success: true, message: 'SmartPrepAI backend is running' }),
+  res.json({ 
+    success: true, 
+    message: 'SmartPrepAI backend is running',
+    FRONTEND_URL: process.env.FRONTEND_URL || 'Not Set'
+  }),
 );
 
 // ============================================================================
