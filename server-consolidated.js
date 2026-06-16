@@ -39,6 +39,7 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
+  "https://smart-prep-ai-jet.vercel.app",
   process.env.FRONTEND_URL,
   process.env.PRODUCTION_FRONTEND_URL,
   "https://my-production-frontend.vercel.app",
@@ -51,6 +52,10 @@ const corsOptions = {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // Allow Vercel preview and deployment domains that match our project name pattern
+    if (origin.startsWith("https://smart-prep") && origin.endsWith(".vercel.app")) {
       return callback(null, true);
     }
     return callback(new Error(`CORS origin denied: ${origin}`));
