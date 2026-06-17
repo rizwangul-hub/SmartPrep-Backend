@@ -4,57 +4,12 @@ const Result = require("../models/Result");
 const aiService = require("../utils/aiService");
 const aiServiceDirect = require("../services/ai.service");
 
-// Get active study plan for user, or generate on the fly
+// Get active study plan for user
 exports.getStudyPlan = async (req, res) => {
   try {
-    let plan = await StudyPlan.findOne({ user: req.user.id }).sort({
+    const plan = await StudyPlan.findOne({ user: req.user.id }).sort({
       createdAt: -1,
     });
-
-    if (!plan) {
-      // Find latest result to assess weak areas
-      const latestResult = await Result.findOne({ user: req.user.id })
-        .populate({
-          path: "answers.question",
-          select: "text options correctOptionIndex",
-        })
-        .sort({ takenAt: -1 });
-
-      const score = latestResult ? latestResult.score : 70; // fallback default
-      const examName = req.user.desiredExam || "General Competency Exams";
-      const weakAreas = [];
-
-      if (latestResult && latestResult.answers) {
-        latestResult.answers.forEach((ans) => {
-          if (!ans.isCorrect && ans.question) {
-            // Very simple keyword parser for weak areas
-            const words = ans.question.text.split(" ");
-            if (words.length > 2) {
-              weakAreas.push(
-                words[words.length - 2] + " " + words[words.length - 1],
-              );
-            }
-          }
-        });
-      }
-
-      const generated = await aiService.generateStudyPlan(
-        examName,
-        score,
-        weakAreas.slice(0, 4),
-      );
-
-      plan = await StudyPlan.create({
-        user: req.user.id,
-        exam: examName,
-        dailyPlan: generated.dailyPlan,
-        weeklyPlan: generated.weeklyPlan,
-        monthlyPlan: generated.monthlyPlan,
-        weakAreas: generated.weakAreas,
-        strongAreas: generated.strongAreas,
-      });
-    }
-
     res.json(plan);
   } catch (err) {
     console.error(err);
