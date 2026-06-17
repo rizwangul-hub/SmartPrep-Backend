@@ -201,9 +201,61 @@ const clearSeenIdsForExam = async (userId, examType) => {
   );
 };
 
+const calculateDistribution = (totalQuestions, distribution) => {
+  const totalWeight = Object.values(distribution).reduce((a, b) => a + b, 0);
+  if (totalWeight === 0) return {};
+
+  const subjects = Object.keys(distribution).map((subject) => {
+    const weight = distribution[subject];
+    const quota = (weight / totalWeight) * totalQuestions;
+    const floorVal = Math.floor(quota);
+    const remainder = quota - floorVal;
+    return {
+      subject,
+      weight,
+      quota,
+      floorVal,
+      remainder,
+    };
+  });
+
+  let currentSum = subjects.reduce((sum, s) => sum + s.floorVal, 0);
+  const diff = totalQuestions - currentSum;
+
+  if (diff > 0) {
+    // Sort primarily by remainder (fractional part) descending, secondary by weight/original percentage weight descending
+    subjects.sort((a, b) => {
+      if (Math.abs(a.remainder - b.remainder) > 1e-9) {
+        return b.remainder - a.remainder;
+      }
+      return b.weight - a.weight;
+    });
+
+    for (let i = 0; i < diff; i++) {
+      const idx = i % subjects.length;
+      subjects[idx].floorVal += 1;
+    }
+  }
+
+  const result = {};
+  subjects.forEach((s) => {
+    result[s.subject] = s.floorVal;
+  });
+
+  return result;
+};
+
+const shuffleArray = (array) => {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+};
+
 // Generate bank-based mock test from question bank according to syllabus
 exports.generateTest = async (req, res) => {
-  const { exam = "PMA" } = req.body;
+  const { exam = "PMA", questionCount } = req.body;
   const examKey = normalizeExamKey(exam);
   const syllabus = EXAM_SYLLABUS[examKey];
 
@@ -224,13 +276,19 @@ exports.generateTest = async (req, res) => {
       const stageInfo = await getCurrentStageForExam(req.user.id, examKey);
       const stageObj = syllabus.stages[stageInfo.step - 1] || syllabus.stages[syllabus.stages.length - 1];
       testTitle = stageObj.title;
-      duration = stageObj.duration;
-      totalQuestions = stageObj.totalQuestions;
+      const defaultDuration = stageObj.duration;
+      const defaultTotalQuestions = stageObj.totalQuestions;
+
+      totalQuestions = questionCount ? Number(questionCount) : defaultTotalQuestions;
+      duration = Math.max(1, Math.round(defaultDuration * (totalQuestions / defaultTotalQuestions)));
       distribution = stageObj.distribution;
     } else {
       testTitle = syllabus.title;
-      duration = syllabus.duration;
-      totalQuestions = syllabus.totalQuestions;
+      const defaultDuration = syllabus.duration;
+      const defaultTotalQuestions = syllabus.totalQuestions;
+
+      totalQuestions = questionCount ? Number(questionCount) : defaultTotalQuestions;
+      duration = Math.max(1, Math.round(defaultDuration * (totalQuestions / defaultTotalQuestions)));
       distribution = syllabus.distribution;
     }
 
@@ -242,11 +300,11 @@ exports.generateTest = async (req, res) => {
       const selectedQuestions = [];
       const selectedIds = new Set(excludeIds); // start exclusion from seen + within-run
 
+      const subjectDistribution = calculateDistribution(totalQuestions, distribution);
+
       // Sample questions based on syllabus distribution
-      for (const [subjectKey, count] of Object.entries(distribution)) {
-        const targetCount = Math.round(
-          (count / Object.values(distribution).reduce((a, b) => a + b, 0)) * totalQuestions
-        );
+      for (const [subjectKey, targetCount] of Object.entries(subjectDistribution)) {
+        if (targetCount <= 0) continue;
         const bucketQuestions = await sampleSyllabusQuestions(
           examKey,
           subjectKey,
@@ -299,7 +357,7 @@ exports.generateTest = async (req, res) => {
       });
     }
 
-    const finalQuestions = selectedQuestions.slice(0, totalQuestions);
+    const finalQuestions = shuffleArray(selectedQuestions.slice(0, totalQuestions));
 
     const formattedQuestions = finalQuestions.map((q) => ({
       _id: q._id,
