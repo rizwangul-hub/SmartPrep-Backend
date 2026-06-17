@@ -9,6 +9,10 @@ const studyPlanSchema = new mongoose.Schema({
   monthlyPlan: { type: String },
   weakAreas: [{ type: String }],
   strongAreas: [{ type: String }],
+  weeksRemaining: { type: Number },
+  dailyHours: { type: Number },
+  structuredPlan: { type: mongoose.Schema.Types.Mixed },
+  tips: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
 });
 

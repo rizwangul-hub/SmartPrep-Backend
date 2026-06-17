@@ -7,6 +7,7 @@ const verifyToken = require('../middleware/auth');
 router.use(verifyToken);
 
 router.get('/', studyController.getStudyPlan);
+router.post('/save', studyController.saveStudyPlan);
 router.post('/regenerate', studyController.regeneratePlan);
 router.post('/chat', studyController.chatAssistant);
 router.post('/mock-interview', studyController.mockInterview);

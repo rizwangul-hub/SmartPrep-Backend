@@ -167,3 +167,34 @@ exports.getRecommendations = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch recommendations" });
   }
 };
+
+// Save custom generated study plan
+exports.saveStudyPlan = async (req, res) => {
+  try {
+    const { exam, weeksRemaining, dailyHours, plan, tips } = req.body;
+    
+    let studyPlan = await StudyPlan.findOne({ user: req.user.id });
+    if (studyPlan) {
+      studyPlan.exam = exam || studyPlan.exam;
+      studyPlan.weeksRemaining = weeksRemaining;
+      studyPlan.dailyHours = dailyHours;
+      studyPlan.structuredPlan = plan;
+      studyPlan.tips = tips;
+      studyPlan.createdAt = new Date(); // update timestamp
+      await studyPlan.save();
+    } else {
+      studyPlan = await StudyPlan.create({
+        user: req.user.id,
+        exam: exam || "General",
+        weeksRemaining,
+        dailyHours,
+        structuredPlan: plan,
+        tips,
+      });
+    }
+    res.json({ success: true, plan: studyPlan });
+  } catch (err) {
+    console.error("Error saving study plan:", err);
+    res.status(500).json({ message: "Failed to save study plan" });
+  }
+};
