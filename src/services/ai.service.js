@@ -323,7 +323,7 @@ Return output strictly in JSON matching:
  */
 const chatAssistant = async (message, history = [], examType = "General") => {
   try {
-    const systemPrompt = `You are SmartPrep AI, an elite virtual tutor specializing in preparing students for the "${examType}" exam.
+    const systemPrompt = `You are PrepForce AI, an elite virtual tutor specializing in preparing students for the "${examType}" exam.
 Your responses should be highly encouraging, structured, and focused on exam concepts, study strategies, and answering questions.
 Keep answers concise and clear. Format output in readable markdown. Use general/polite references only (e.g. refer to yourself as the "AI Assistant").`;
 
@@ -351,7 +351,7 @@ Keep answers concise and clear. Format output in readable markdown. Use general/
  */
 const mockInterviewAssistant = async (message, history = [], jobOrExam = "General Recruitment") => {
   try {
-    const systemPrompt = `You are the SmartPrep AI Interview Board. You are conducting a mock job/exam interview for a candidate preparing for "${jobOrExam}".
+    const systemPrompt = `You are the PrepForce AI Interview Board. You are conducting a mock job/exam interview for a candidate preparing for "${jobOrExam}".
 Ask one structured interview question at a time, evaluate their response, and provide gentle constructive advice in your follow-ups. Keep it professional.`;
 
     const formattedMessages = [

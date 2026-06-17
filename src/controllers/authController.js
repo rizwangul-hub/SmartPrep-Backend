@@ -187,18 +187,18 @@ exports.forgotPassword = async (req, res) => {
 
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;background:#f9fafb;border-radius:12px;">
-        <h2 style="color:#4f46e5;">SMARTPREPAI Password Reset OTP</h2>
+        <h2 style="color:#4f46e5;">PrepForce AI Password Reset OTP</h2>
         <p>Hello <strong>${user.name}</strong>,</p>
         <p>Your password reset OTP is:</p>
         <p style="font-size:28px;font-weight:bold;margin:16px 0;letter-spacing:3px;color:#111;">${otp}</p>
         <p>This OTP expires in <strong>10 minutes</strong>.</p>
         <p>If you did not request a password reset, ignore this email.</p>
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
-        <p style="color:#9ca3af;font-size:12px;">SMARTPREPAI — AI-Powered Exam Preparation</p>
+        <p style="color:#9ca3af;font-size:12px;">PrepForce AI — AI-Powered Exam Preparation</p>
       </div>
     `;
 
-    await sendMail(email, 'SMARTPREPAI Password Reset OTP', html);
+    await sendMail(email, 'PrepForce AI Password Reset OTP', html);
     return res.json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
     console.error('Forgot password error:', err);
