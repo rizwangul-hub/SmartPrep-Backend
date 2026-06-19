@@ -52,11 +52,11 @@ const EXAM_SYLLABUS = {
     totalQuestions: 100,
     distribution: {
       "English": 20,
-      "General Knowledge": 20,
-      "Computer": 20,
-      "IQ / Intelligence": 20,
-      "Pakistan Studies": 10,
-      "Islamic Studies": 10
+      "General Knowledge & Current Affairs": 20,
+      "Mathematics / Intelligence": 15,
+      "Pakistan Studies": 20,
+      "Islamic Studies": 15,
+      "FIA Related Questions": 10
     }
   },
   anf: {
@@ -76,14 +76,13 @@ const EXAM_SYLLABUS = {
     duration: 100,
     totalQuestions: 100,
     distribution: {
-      "General Knowledge": 11,
+      "General Knowledge & Current Affairs": 11,
       "Pakistan Studies": 11,
       "Current Affairs": 11,
-      "English": 11,
+      "English": 15,
       "Urdu": 11,
       "Mathematics": 11,
       "Intelligence": 11,
-      "Computer": 11,
       "Law Basics": 12
     }
   },
