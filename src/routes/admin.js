@@ -4,6 +4,7 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const aiUploadController = require('../controllers/aiUploadController');
 const reclassifyController = require('../controllers/reclassifyController');
+const contactController = require('../controllers/contactController');
 const verifyToken = require('../middleware/auth');
 
 // Middleware to ensure user is admin
@@ -43,5 +44,8 @@ router.get('/users', adminController.getUsers);
 router.put('/users/:userId/role', adminController.updateUserRole);
 router.put('/users/:userId/status', adminController.updateUserStatus);
 router.delete('/users/:userId', adminController.deleteUser);
+
+// Contact messages
+router.get('/contact-messages', contactController.getMessages);
 
 module.exports = router;

@@ -142,6 +142,7 @@ const uploadRoutes = require("./src/routes/upload");
 const projectRoutes = require("./src/routes/projects");
 const longTaskRoutes = require("./src/routes/longtask");
 const seoRoutes = require("./src/routes/seo");
+const contactRoutes = require("./src/routes/contact");
 
 // Dev-only admin routes
 let devAdminRoutes;
@@ -171,6 +172,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/longtask", longTaskRoutes);
 app.use("/api/seo", seoRoutes);
+app.use("/api/contact", contactRoutes);
 app.get("/sitemap.xml", require("./src/controllers/seoController").getSitemap);
 
 // ============================================================================

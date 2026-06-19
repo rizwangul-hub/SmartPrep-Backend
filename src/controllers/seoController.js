@@ -134,10 +134,26 @@ exports.getSitemap = async (req, res) => {
 
     let urls = [];
 
-    // 1. Homepage
+    // 1. Homepage & Auth
     urls.push(`<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`);
     urls.push(`<url><loc>${baseUrl}/login</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`);
     urls.push(`<url><loc>${baseUrl}/register</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`);
+
+    // 1b. Legal, Company & Support Pages
+    const newPages = [
+      'privacy-policy',
+      'terms-and-conditions',
+      'disclaimer',
+      'about-us',
+      'our-mission',
+      'why-choose-us',
+      'contact-us',
+      'help-center',
+      'faq'
+    ];
+    newPages.forEach(p => {
+      urls.push(`<url><loc>${baseUrl}/${p}</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`);
+    });
 
     // 2. Static exam pages
     STATIC_EXAMS.forEach(e => {

@@ -121,12 +121,12 @@ const callOpenRouter = async ({ messages, temperature = 0.7 }) => {
 
   // 2. OpenRouter Call (default)
   // Best models to try in order
-  const defaultModel = settings?.defaultModel || "openrouter/free";
+  const defaultModel = settings?.defaultModel || "deepseek/deepseek-chat";
   const modelsToTry = [
     defaultModel,
-    "openrouter/free",
+    "deepseek/deepseek-chat",
+    "google/gemini-2.5-flash",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-2-9b-it:free",
   ];
 
   const uniqueModels = [...new Set(modelsToTry)];
