@@ -39,7 +39,6 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
-  "https://smart-prep-ai-jet.vercel.app",
   process.env.FRONTEND_URL,
   process.env.PRODUCTION_FRONTEND_URL,
   "https://my-production-frontend.vercel.app",
@@ -52,10 +51,6 @@ const corsOptions = {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    // Allow Vercel preview and deployment domains that match our project name pattern
-    if (origin.startsWith("https://smart-prep") && origin.endsWith(".vercel.app")) {
       return callback(null, true);
     }
     return callback(new Error(`CORS origin denied: ${origin}`));
@@ -119,11 +114,7 @@ app.get("/api/public-stats", async (req, res) => {
 });
 
 app.get('/', (req, res) =>
-  res.json({ 
-    success: true, 
-    message: 'PrepForce AI backend is running',
-    FRONTEND_URL: process.env.FRONTEND_URL || 'Not Set'
-  }),
+  res.json({ success: true, message: 'SmartPrepAI backend is running',FRONTEND_URL: process.env.FRONTEND_URL }),
 );
 
 // ============================================================================
@@ -141,8 +132,7 @@ const testRoutes = require("./src/routes/test");
 const uploadRoutes = require("./src/routes/upload");
 const projectRoutes = require("./src/routes/projects");
 const longTaskRoutes = require("./src/routes/longtask");
-const seoRoutes = require("./src/routes/seo");
-const contactRoutes = require("./src/routes/contact");
+const chatRoutes = require("./src/routes/chat");
 
 // Dev-only admin routes
 let devAdminRoutes;
@@ -171,9 +161,7 @@ app.use("/api/tests", testRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/longtask", longTaskRoutes);
-app.use("/api/seo", seoRoutes);
-app.use("/api/contact", contactRoutes);
-app.get("/sitemap.xml", require("./src/controllers/seoController").getSitemap);
+app.use("/api/chat", chatRoutes);
 
 // ============================================================================
 // 10. ERROR HANDLING
@@ -200,6 +188,18 @@ const DEFAULT_PORT = 5000;
 const PORT = Number(process.env.PORT) || DEFAULT_PORT;
 
 const server = http.createServer(app);
+
+// Bind Socket.io to HTTP Server
+const socketIo = require('socket.io');
+const io = socketIo(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+const socketService = require('./src/services/socketService');
+socketService.init(io);
 
 function onListening(port) {
   console.log(`🚀 Server listening on port ${port}`);

@@ -128,16 +128,12 @@ function capitalize(str) {
 // Dynamic sitemap generator
 exports.getSitemap = async (req, res) => {
   try {
-    const host = req.get('host') || 'prepforceai.com';
-    const protocol = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = 'https://prepforceai.online';
 
     let urls = [];
 
-    // 1. Homepage & Auth
+    // 1. Homepage
     urls.push(`<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`);
-    urls.push(`<url><loc>${baseUrl}/login</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`);
-    urls.push(`<url><loc>${baseUrl}/register</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`);
 
     // 1b. Legal, Company & Support Pages
     const newPages = [
@@ -157,7 +153,11 @@ exports.getSitemap = async (req, res) => {
 
     // 2. Static exam pages
     STATIC_EXAMS.forEach(e => {
-      urls.push(`<url><loc>${baseUrl}/${e.slug}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>`);
+      if (e.type === 'prep') {
+        urls.push(`<url><loc>${baseUrl}/exams/${e.exam.toLowerCase()}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>`);
+      } else {
+        urls.push(`<url><loc>${baseUrl}/${e.slug}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>`);
+      }
     });
 
     // 3. Static subject pages
@@ -385,8 +385,8 @@ exports.getSeoContent = async (req, res) => {
     }
 
     // --- CASE 5: Exam SEO Pages ---
-    // Match: e.g. "asf-preparation"
-    const examPage = STATIC_EXAMS.find(e => e.slug === slug);
+    // Match: e.g. "asf-preparation" or short form "asf"
+    const examPage = STATIC_EXAMS.find(e => e.slug === slug || (e.exam.toLowerCase() === slug.toLowerCase() && e.type === 'prep'));
     if (examPage) {
       const examNameRegex = new RegExp(examPage.exam, 'i');
       const questions = await Question.find({
@@ -396,8 +396,11 @@ exports.getSeoContent = async (req, res) => {
 
       // Related exam links
       const internalLinks = STATIC_EXAMS
-        .filter(e => e.exam === examPage.exam && e.slug !== slug)
-        .map(e => ({ label: e.title.split('|')[0].trim(), slug: e.slug }));
+        .filter(e => e.exam === examPage.exam && e.slug !== slug && e.slug !== examPage.slug)
+        .map(e => {
+          const targetSlug = e.type === 'prep' ? `exams/${e.exam.toLowerCase()}` : e.slug;
+          return { label: e.title.split('|')[0].trim(), slug: targetSlug };
+        });
 
       return res.json({
         success: true,
@@ -411,7 +414,7 @@ exports.getSeoContent = async (req, res) => {
         questions,
         breadcrumbs: [
           { label: 'Home', path: '/' },
-          { label: examPage.exam, path: '/' + slug }
+          { label: examPage.exam, path: examPage.type === 'prep' ? `/exams/${examPage.exam.toLowerCase()}` : `/${examPage.slug}` }
         ],
         internalLinks,
         schema: {

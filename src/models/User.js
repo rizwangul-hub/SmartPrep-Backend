@@ -36,6 +36,8 @@ const userSchema = new mongoose.Schema({
   forgotPasswordOtpRequestWindowStart: { type: Date },
   status: { type: String, enum: ['active', 'blocked'], default: 'active' },
   bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
+  isChatBanned: { type: Boolean, default: false },
+  chatMutedUntil: { type: Date, default: null },
   // Per-exam history of seen question IDs (for no-repeat question logic)
   seenQuestions: { type: [seenQuestionsEntrySchema], default: [] },
   createdAt: { type: Date, default: Date.now },
