@@ -14,6 +14,9 @@ router.use(verifyToken);
 // Fetch paginated community messages
 router.get('/messages', chatController.getMessages);
 
+// Send community message via HTTP POST (fallback)
+router.post('/messages', chatController.postMessage);
+
 // Fetch pinned messages
 router.get('/pinned', chatController.getPinnedMessages);
 

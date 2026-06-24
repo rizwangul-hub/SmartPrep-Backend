@@ -5,8 +5,12 @@ const CommunityMessage = require('../models/CommunityMessage');
 // In-memory session store mapping userId -> Set of socketIds (handles multiple tabs per user)
 const onlineUsers = new Map();
 
+let ioInstance = null;
+
 module.exports = {
+  getIo: () => ioInstance,
   init: (io) => {
+    ioInstance = io;
     // Auth middleware: Extract and verify JWT before allowing connection
     io.use(async (socket, next) => {
       try {
