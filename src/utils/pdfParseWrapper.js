@@ -58,6 +58,14 @@ const pdfParse = async (buffer) => {
       data = new Uint8Array(buffer);
     }
 
+    if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = require('pdfjs-dist/build/pdf.worker.entry');
+      } catch (workerErr) {
+        // Worker entry may not be required in this environment.
+      }
+    }
+
     const loadingTask = pdfjsLib.getDocument({ data });
     const pdfDocument = await loadingTask.promise;
     let text = '';

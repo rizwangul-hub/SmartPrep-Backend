@@ -58,7 +58,7 @@ function parseAnswerKey(text) {
   const answerMap = {};
   if (!text) return answerMap;
 
-  const pattern = /\b(?:Q\s*)?(\d+)\s*[-:\.\s\)\]]+\s*\(?([A-D1-4a-d])\)?/gi;
+  const pattern = /\b(?:Q\s*)?(\d+)[^\S\n]*[-:\.\)\]]*[^\S\n]+\(?([A-D1-4a-d])\)?/gi;
   let match;
   let count = 0;
   while ((match = pattern.exec(text)) !== null) {
@@ -167,6 +167,19 @@ function parseBlock(block) {
         if (lastFilledIdx !== undefined && lastFilledIdx >= 0) {
           options[lastFilledIdx] += " " + cleanOption(line);
         }
+      }
+    }
+  }
+
+  // Extract trailing letter answer if no explicit answer marker has been found
+  if (!extractedAnswerString) {
+    const lastIdx = options.map((o, i) => o ? i : -1).filter(i => i !== -1).pop();
+    if (lastIdx !== undefined && lastIdx >= 0) {
+      const lastOpt = options[lastIdx];
+      const trailingLetterMatch = lastOpt.match(/\s+([A-D])\s*$/i);
+      if (trailingLetterMatch) {
+        extractedAnswerString = trailingLetterMatch[1].toUpperCase();
+        options[lastIdx] = lastOpt.replace(/\s+([A-D])\s*$/, "").trim();
       }
     }
   }
@@ -345,7 +358,7 @@ function cleanTextForParsing(rawText) {
   // Example: "A) One B) Two C) Three D) Four" -> separate lines for each option.
   out = out.replace(/([^\n])\s+([A-D1-4a-d])\s*[\.\)\]\-–]\s+/g, "$1\n$2) ");
   out = out.replace(/\s+([A-D1-4a-d])\s*\.[^\S\n]*/g, "\n$1) ");
-  out = out.replace(/\s+Answer\s*[:=\-–]?\s*/gi, "\nAnswer: ");
+  out = out.replace(/\s+Answer(?!\s*(?:Key|Sheet))\s*[:=\-–]?\s*/gi, "\nAnswer: ");
 
   // Split combined option lines like "A) text B) text" into multiple lines.
   out = out.replace(/([A-D])\)\s*([^\n]+?)\s+(?=[A-D]\)\s+)/g, "$1) $2\n");
